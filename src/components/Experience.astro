@@ -1,0 +1,150 @@
+---
+const experiences = [
+  {
+    role: "Full Stack Developer",
+    company: "BEO Software Pvt. Ltd",
+    period: "Present",
+    location: "Cochin, Kerala",
+    description:
+      "Building production-grade applications across the full stack. Working with TypeScript, NestJS, React, and cloud infrastructure. Leading backend architecture decisions and building internal developer tooling.",
+    technologies: ["TypeScript", "NestJS", "React", "PostgreSQL", "Docker", "AWS"],
+  },
+];
+---
+
+<div class="section-divider"></div>
+
+<section class="section" id="experience">
+  <div class="fade-in">
+    <div class="section-label">
+      <span class="section-label-line"></span>
+      <span class="section-label-prefix">~/experience</span>
+    </div>
+    <h2 class="section-title">Experience</h2>
+    <p class="section-subtitle">Professional journey</p>
+  </div>
+
+  <div class="timeline">
+    {experiences.map((exp, i) => (
+      <div class={`timeline-item fade-in stagger-${i + 1}`}>
+        <div class="timeline-marker">
+          <div class="timeline-dot"></div>
+        </div>
+
+        <div class="timeline-card card">
+          <div class="timeline-header">
+            <div>
+              <h3 class="timeline-role">{exp.role}</h3>
+              <p class="timeline-company">{exp.company}</p>
+            </div>
+            <div class="timeline-meta">
+              <span class="tag">{exp.period}</span>
+              <span class="timeline-location">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                </svg>
+                {exp.location}
+              </span>
+            </div>
+          </div>
+
+          <p class="timeline-desc">{exp.description}</p>
+
+          <div class="timeline-tags">
+            {exp.technologies.map((tech) => (
+              <span class="tag">{tech}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .timeline-item {
+    display: flex;
+    gap: 1.25rem;
+  }
+
+  .timeline-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    padding-top: 1.5rem;
+  }
+
+  .timeline-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--color-gradient-from), var(--color-gradient-to));
+    box-shadow: 0 0 0 4px var(--color-accent-subtle);
+  }
+
+  .timeline-card {
+    padding: 1.5rem;
+    flex: 1;
+  }
+
+  .timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+    flex-wrap: wrap;
+  }
+
+  .timeline-role {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+  }
+
+  .timeline-company {
+    color: var(--color-accent);
+    font-weight: 600;
+    font-size: 0.88rem;
+  }
+
+  .timeline-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.35rem;
+  }
+
+  .timeline-location {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+  }
+
+  .timeline-desc {
+    font-size: 0.88rem;
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    margin-bottom: 1rem;
+  }
+
+  .timeline-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  @media (max-width: 640px) {
+    .timeline-marker { display: none; }
+    .timeline-meta { align-items: flex-start; }
+  }
+</style>

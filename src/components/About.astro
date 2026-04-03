@@ -1,0 +1,136 @@
+---
+
+---
+
+<section class="section" id="about">
+  <div class="fade-in">
+    <div class="section-label">
+      <span class="section-label-line"></span>
+      <span class="section-label-prefix">~/about</span>
+    </div>
+    <h2 class="section-title">About Me</h2>
+    <p class="section-subtitle">The person behind the code</p>
+  </div>
+
+  <div class="about-grid">
+    <div class="about-content fade-in">
+      <p>
+        I'm a Full Stack Developer based in <strong>Cochin, Kerala</strong>, currently working at
+        <strong>BEO Software Pvt. Ltd</strong>. With over 12 years in the industry, I've had the privilege of
+        working across the entire software stack — from crafting pixel-perfect frontends to designing
+        resilient backend architectures and building developer tooling.
+      </p>
+      <p>
+        What drives me is the joy of solving real problems with well-crafted code. I don't believe in
+        being locked into one language or framework. Whether it's <strong>TypeScript</strong> for a NestJS
+        backend, <strong>Rust</strong> for a performant CLI, <strong>Go</strong> for container tooling, or
+        <strong>Python</strong> for data processing — I pick the right tool for the job.
+      </p>
+      <p>
+        When I'm not writing production code, I'm building open-source developer tools, experimenting with
+        new technologies, or writing about what I've learned.
+      </p>
+    </div>
+
+    <div class="about-highlights fade-in">
+      <div class="highlight-card card">
+        <div class="highlight-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
+          </svg>
+        </div>
+        <div>
+          <h3>Polyglot Developer</h3>
+          <p>Fluent in 8+ languages — choosing the best tool for each problem</p>
+        </div>
+      </div>
+
+      <div class="highlight-card card">
+        <div class="highlight-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
+        </div>
+        <div>
+          <h3>CLI Craftsman</h3>
+          <p>Obsessed with building tools that live in the terminal</p>
+        </div>
+      </div>
+
+      <div class="highlight-card card">
+        <div class="highlight-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+          </svg>
+        </div>
+        <div>
+          <h3>Full Stack Thinker</h3>
+          <p>From databases to dashboards, infrastructure to interfaces</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .about-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .about-grid {
+      grid-template-columns: 1.3fr 1fr;
+      gap: 3.5rem;
+    }
+  }
+
+  .about-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+  }
+
+  .about-content p {
+    color: var(--color-text);
+    line-height: 1.8;
+    font-size: 0.95rem;
+  }
+
+  .about-content strong {
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+
+  .about-highlights {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .highlight-card {
+    padding: 1.25rem;
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .highlight-icon {
+    color: var(--color-accent);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .highlight-card h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  .highlight-card p {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+</style>

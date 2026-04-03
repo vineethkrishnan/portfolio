@@ -1,0 +1,136 @@
+---
+import { getCollection } from "astro:content";
+
+const posts = (await getCollection("blog"))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 3);
+---
+
+{posts.length > 0 && (
+  <>
+    <div class="section-divider"></div>
+
+    <section class="section" id="blog">
+      <div class="fade-in">
+        <div class="section-label">
+          <span class="section-label-line"></span>
+          <span class="section-label-prefix">~/blog</span>
+        </div>
+        <h2 class="section-title">Latest Posts</h2>
+        <p class="section-subtitle">Thoughts and tutorials</p>
+      </div>
+
+      <div class="blog-list">
+        {posts.map((post, i) => (
+          <a href={`/blog/${post.id}`} class={`blog-card card fade-in stagger-${i + 1}`}>
+            <div class="blog-card-inner">
+              <time datetime={post.data.pubDate.toISOString()}>
+                {post.data.pubDate.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </time>
+              <h3>{post.data.title}</h3>
+              <p>{post.data.description}</p>
+              {post.data.tags.length > 0 && (
+                <div class="blog-tags">
+                  {post.data.tags.map((tag) => (
+                    <span class="tag">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div class="blog-arrow">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+              </svg>
+            </div>
+          </a>
+        ))}
+      </div>
+
+      <div class="blog-cta fade-in">
+        <a href="/blog" class="btn btn-outline">
+          View All Posts
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+          </svg>
+        </a>
+      </div>
+    </section>
+  </>
+)}
+
+<style>
+  .blog-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .blog-card {
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .blog-card:hover { color: var(--color-text); }
+
+  .blog-card-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex: 1;
+  }
+
+  .blog-card time {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+
+  .blog-card h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    transition: color 0.2s;
+  }
+
+  .blog-card:hover h3 {
+    color: var(--color-accent);
+  }
+
+  .blog-card p {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+
+  .blog-tags {
+    display: flex;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
+  }
+
+  .blog-arrow {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+    transition: color 0.2s, transform 0.2s;
+  }
+
+  .blog-card:hover .blog-arrow {
+    color: var(--color-accent);
+    transform: translateX(4px);
+  }
+
+  .blog-cta {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+  }
+</style>

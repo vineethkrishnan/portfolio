@@ -1,0 +1,239 @@
+---
+const languages = [
+  { name: "TypeScript", pct: 30, color: "#3178c6" },
+  { name: "Go", pct: 15, color: "#00add8" },
+  { name: "Rust", pct: 12, color: "#dea584" },
+  { name: "Python", pct: 12, color: "#3572a5" },
+  { name: "PHP", pct: 12, color: "#4f5d95" },
+  { name: "JavaScript", pct: 10, color: "#f1e05a" },
+  { name: "Shell", pct: 5, color: "#89e051" },
+  { name: "Other", pct: 4, color: "#6b7280" },
+];
+
+const stats = [
+  { label: "Public Repos", value: "41", icon: `<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />` },
+  { label: "Languages", value: "8+", icon: `<polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />` },
+  { label: "CLI Tools", value: "7+", icon: `<polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />` },
+  { label: "Years Active", value: "12+", icon: `<circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />` },
+];
+
+// Generate deterministic contribution data
+const weeks = 52;
+const days = 7;
+function getLevel(w: number, d: number): number {
+  const seed = (w * 7 + d) * 2654435761;
+  const hash = ((seed >> 16) ^ seed) & 0xff;
+  const norm = hash / 255;
+  if (norm < 0.35) return 0;
+  if (norm < 0.55) return 1;
+  if (norm < 0.75) return 2;
+  if (norm < 0.9) return 3;
+  return 4;
+}
+---
+
+<div class="section-divider"></div>
+
+<section class="section" id="github">
+  <div class="fade-in">
+    <div class="section-label">
+      <span class="section-label-line"></span>
+      <span class="section-label-prefix">~/github</span>
+    </div>
+    <h2 class="section-title">GitHub Activity</h2>
+    <p class="section-subtitle">Open source presence at a glance</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row fade-in">
+    {stats.map((stat) => (
+      <div class="stat-card card">
+        <div class="stat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={stat.icon} />
+        </div>
+        <span class="stat-value">{stat.value}</span>
+        <span class="stat-label">{stat.label}</span>
+      </div>
+    ))}
+  </div>
+
+  <!-- Language bar -->
+  <div class="lang-card card fade-in">
+    <h3 class="card-title">Most Used Languages</h3>
+    <div class="lang-bar">
+      {languages.map((lang) => (
+        <div
+          class="lang-segment"
+          style={`flex: ${lang.pct}; background-color: ${lang.color}`}
+          title={`${lang.name}: ${lang.pct}%`}
+        />
+      ))}
+    </div>
+    <div class="lang-legend">
+      {languages.map((lang) => (
+        <div class="lang-item">
+          <span class="lang-dot" style={`background-color: ${lang.color}`} />
+          <span class="lang-name">{lang.name}</span>
+          <span class="lang-pct">{lang.pct}%</span>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- Contribution graph -->
+  <div class="contrib-card card fade-in">
+    <h3 class="card-title">Contributions</h3>
+    <div class="contrib-scroll">
+      <div class="contrib-grid">
+        {Array.from({ length: weeks }).map((_, w) =>
+          Array.from({ length: days }).map((_, d) => (
+            <div class={`contrib-cell contrib-${getLevel(w, d)}`} />
+          ))
+        )}
+      </div>
+    </div>
+    <div class="contrib-legend">
+      <span>Less</span>
+      {[0, 1, 2, 3, 4].map((l) => <div class={`contrib-cell contrib-${l}`} />)}
+      <span>More</span>
+    </div>
+  </div>
+</section>
+
+<style>
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .stats-row {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  .stat-card {
+    padding: 1.25rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .stat-icon {
+    color: var(--color-accent);
+    margin-bottom: 0.25rem;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--color-heading);
+    font-family: var(--font-heading);
+    letter-spacing: -0.03em;
+  }
+
+  .stat-label {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+  }
+
+  /* Language card */
+  .lang-card, .contrib-card {
+    padding: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .card-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .lang-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    gap: 2px;
+    margin-bottom: 1rem;
+  }
+
+  .lang-segment {
+    border-radius: 2px;
+    min-width: 4px;
+    transition: opacity 0.2s;
+  }
+
+  .lang-segment:hover { opacity: 0.75; }
+
+  .lang-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+  }
+
+  .lang-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+  }
+
+  .lang-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .lang-name { color: var(--color-text); font-weight: 500; }
+  .lang-pct { color: var(--color-text-muted); }
+
+  /* Contribution graph */
+  .contrib-scroll { overflow-x: auto; }
+
+  .contrib-grid {
+    display: grid;
+    grid-template-rows: repeat(7, 1fr);
+    grid-auto-flow: column;
+    gap: 3px;
+    width: fit-content;
+    min-width: 100%;
+  }
+
+  .contrib-cell {
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+  }
+
+  .contrib-0 { background-color: var(--color-bg-code); }
+  .contrib-1 { background-color: color-mix(in srgb, var(--color-accent) 20%, var(--color-bg-code)); }
+  .contrib-2 { background-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-bg-code)); }
+  .contrib-3 { background-color: color-mix(in srgb, var(--color-accent) 65%, var(--color-bg-code)); }
+  .contrib-4 { background-color: var(--color-accent); }
+
+  .contrib-legend {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 0.6rem;
+    justify-content: flex-end;
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+  }
+
+  .contrib-legend span {
+    margin: 0 4px;
+  }
+</style>

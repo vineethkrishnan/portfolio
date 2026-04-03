@@ -1,0 +1,272 @@
+---
+import { projects, languageColors } from "../data/projects";
+
+const featured = projects.slice(0, 6);
+const other = projects.slice(6);
+---
+
+<div class="section-divider"></div>
+
+<section class="section" id="projects">
+  <div class="fade-in">
+    <div class="section-label">
+      <span class="section-label-line"></span>
+      <span class="section-label-prefix">~/projects</span>
+    </div>
+    <h2 class="section-title">Projects</h2>
+    <p class="section-subtitle">Open source tools and experiments</p>
+  </div>
+
+  <!-- Featured projects -->
+  <div class="projects-grid">
+    {featured.map((project, i) => (
+      <a
+        href={project.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        class={`project-card card fade-in stagger-${Math.min(i + 1, 5)}`}
+      >
+        <div class="project-top">
+          <div class="project-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+          </div>
+          <svg class="project-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+          </svg>
+        </div>
+
+        <h3 class="project-name">{project.name}</h3>
+        <p class="project-desc">{project.description}</p>
+
+        <div class="project-meta">
+          <span class="project-lang">
+            <span class="lang-dot" style={`background-color: ${languageColors[project.language] || "#6b7280"}`} />
+            {project.language}
+          </span>
+          {project.stars > 0 && (
+            <span class="project-stars">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              {project.stars}
+            </span>
+          )}
+        </div>
+
+        {project.topics.length > 0 && (
+          <div class="project-tags">
+            {project.topics.slice(0, 3).map((t) => (
+              <span class="tag">{t}</span>
+            ))}
+          </div>
+        )}
+      </a>
+    ))}
+  </div>
+
+  <!-- Other projects -->
+  {other.length > 0 && (
+    <div class="other-projects fade-in">
+      <h3 class="other-title">Other Projects</h3>
+      <div class="other-grid">
+        {other.map((project) => (
+          <a href={project.url} target="_blank" rel="noopener noreferrer" class="other-card card">
+            <div class="other-card-top">
+              <h4>{project.name}</h4>
+              <svg class="other-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+              </svg>
+            </div>
+            <p>{project.description}</p>
+            <span class="other-lang">
+              <span class="lang-dot" style={`background-color: ${languageColors[project.language] || "#6b7280"}`} />
+              {project.language}
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  )}
+
+  <div class="projects-cta fade-in">
+    <a href="https://github.com/vineethkrishnan?tab=repositories" target="_blank" rel="noopener noreferrer" class="btn btn-outline">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+      </svg>
+      View All Repositories
+    </a>
+  </div>
+</section>
+
+<style>
+  .projects-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .projects-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 900px) {
+    .projects-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .project-card {
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .project-card:hover { color: var(--color-text); }
+
+  .project-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .project-icon { color: var(--color-accent); }
+
+  .project-arrow {
+    color: var(--color-text-muted);
+    transition: color 0.2s, transform 0.2s;
+  }
+
+  .project-card:hover .project-arrow {
+    color: var(--color-accent);
+    transform: translate(2px, -2px);
+  }
+
+  .project-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
+
+  .project-desc {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    flex: 1;
+  }
+
+  .project-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+  }
+
+  .project-lang, .other-lang {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .lang-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .project-stars {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--color-accent);
+  }
+
+  .project-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  /* Other projects */
+  .other-projects { margin-top: 2.5rem; }
+
+  .other-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+  }
+
+  .other-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .other-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .other-card {
+    padding: 1rem;
+    color: var(--color-text);
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .other-card:hover { color: var(--color-text); }
+
+  .other-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .other-card h4 {
+    font-size: 0.88rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+  }
+
+  .other-arrow {
+    color: var(--color-text-muted);
+    transition: color 0.2s, transform 0.2s;
+  }
+
+  .other-card:hover .other-arrow {
+    color: var(--color-accent);
+    transform: translate(2px, -2px);
+  }
+
+  .other-card p {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+
+  .other-lang {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+
+  .projects-cta {
+    display: flex;
+    justify-content: center;
+    margin-top: 2.5rem;
+  }
+</style>

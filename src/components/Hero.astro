@@ -1,0 +1,277 @@
+---
+
+---
+
+<section class="hero" id="hero">
+  <!-- Background effects -->
+  <div class="hero-bg" aria-hidden="true">
+    <div class="hero-orb hero-orb-1"></div>
+    <div class="hero-orb hero-orb-2"></div>
+    <div class="hero-grid-overlay"></div>
+  </div>
+
+  <div class="hero-inner">
+    <div class="hero-content">
+      <!-- Terminal prompt line -->
+      <div class="hero-prompt fade-in stagger-1">
+        <span class="terminal-only">$ whoami</span>
+        <span class="non-terminal-only tag">Full Stack Developer</span>
+      </div>
+
+      <h1 class="hero-title fade-in stagger-2">
+        <span class="hero-greeting">Hi, I'm</span>
+        <span class="hero-name gradient-text">Vineeth N K</span>
+        <span class="cursor">_</span>
+      </h1>
+
+      <p class="hero-tagline fade-in stagger-3" id="hero-tagline">
+        Writing code, building tools, and sharing what I learn along the way.
+      </p>
+
+      <p class="hero-description fade-in stagger-4">
+        12+ years shipping production software across
+        <span class="hero-lang">TypeScript</span><span class="hero-sep">,</span>
+        <span class="hero-lang">Go</span><span class="hero-sep">,</span>
+        <span class="hero-lang">Rust</span><span class="hero-sep">,</span>
+        <span class="hero-lang">Python</span><span class="hero-sep"> &</span>
+        <span class="hero-lang">PHP</span><span class="hero-sep">.</span>
+        <br />CLIs, APIs, infrastructure — whatever the problem needs.
+      </p>
+
+      <div class="hero-actions fade-in stagger-5">
+        <a href="#projects" class="btn btn-primary">
+          View Projects
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+          </svg>
+        </a>
+        <a href="https://github.com/vineethkrishnan" target="_blank" rel="noopener noreferrer" class="btn btn-outline">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+          </svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+
+    <div class="hero-stats fade-in">
+      <div class="hero-stat">
+        <span class="hero-stat-value">12+</span>
+        <span class="hero-stat-label">Years</span>
+      </div>
+      <div class="hero-stat-dot"></div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">40+</span>
+        <span class="hero-stat-label">Repos</span>
+      </div>
+      <div class="hero-stat-dot"></div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">8+</span>
+        <span class="hero-stat-label">Languages</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scroll indicator -->
+  <div class="scroll-hint fade-in" aria-hidden="true">
+    <div class="scroll-hint-line"></div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 7rem 1.5rem 4rem;
+    overflow: hidden;
+  }
+
+  .hero-inner {
+    max-width: 1080px;
+    margin: 0 auto;
+    width: 100%;
+    position: relative;
+    z-index: 2;
+  }
+
+  .hero-content {
+    max-width: 680px;
+  }
+
+  /* Terminal-only prompt — uses CSS custom properties set per theme */
+  .terminal-only { display: var(--section-prefix-display, none); }
+  .non-terminal-only { display: var(--badge-display, inline-flex); }
+
+  .hero-prompt {
+    margin-bottom: 1.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--color-accent);
+  }
+
+  .hero-title {
+    font-size: clamp(2.5rem, 7vw, 5rem);
+    font-weight: 800;
+    line-height: 1.05;
+    margin-bottom: 1.5rem;
+    letter-spacing: -0.04em;
+  }
+
+  .hero-greeting {
+    display: block;
+    font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+    font-weight: 500;
+    color: var(--color-text-muted);
+    letter-spacing: 0;
+    margin-bottom: 0.5rem;
+  }
+
+  .hero-name {
+    display: inline;
+  }
+
+  .hero-tagline {
+    font-size: clamp(1.05rem, 2vw, 1.25rem);
+    color: var(--color-text-muted);
+    margin-bottom: 1rem;
+    font-style: italic;
+    letter-spacing: 0.01em;
+  }
+
+  .hero-description {
+    font-size: 0.95rem;
+    color: var(--color-text-muted);
+    max-width: 560px;
+    line-height: 1.8;
+    margin-bottom: 2.5rem;
+  }
+
+  .hero-lang {
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+
+  .hero-sep {
+    color: var(--color-text-muted);
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  /* Stats bar */
+  .hero-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .hero-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .hero-stat-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--color-heading);
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+
+  .hero-stat-label {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 500;
+  }
+
+  .hero-stat-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: var(--color-border-hover);
+    margin-top: -0.5rem;
+  }
+
+  /* Background orbs */
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .hero-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+    opacity: 0;
+    animation: orbPulse 8s ease-in-out infinite;
+  }
+
+  .hero-orb-1 {
+    width: 500px;
+    height: 500px;
+    top: -15%;
+    right: -10%;
+    background: var(--color-accent-glow);
+    animation-delay: 0s;
+  }
+
+  .hero-orb-2 {
+    width: 350px;
+    height: 350px;
+    bottom: -10%;
+    left: -5%;
+    background: var(--color-accent-glow);
+    animation-delay: 4s;
+  }
+
+  @keyframes orbPulse {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.15); }
+  }
+
+  /* Grid overlay — styled via global CSS per theme */
+  .hero-grid-overlay {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Scroll indicator */
+  .scroll-hint {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+  }
+
+  .scroll-hint-line {
+    width: 1px;
+    height: 48px;
+    background: linear-gradient(to bottom, var(--color-accent), transparent);
+    animation: scrollPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes scrollPulse {
+    0%, 100% { opacity: 0.3; height: 48px; }
+    50% { opacity: 0.8; height: 60px; }
+  }
+
+  @media (max-width: 640px) {
+    .hero-stat-dot { display: none; }
+    .hero-stats { gap: 1.5rem; }
+  }
+</style>

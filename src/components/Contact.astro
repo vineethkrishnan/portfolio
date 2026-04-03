@@ -1,0 +1,118 @@
+---
+const links = [
+  {
+    label: "GitHub",
+    href: "https://github.com/vineethkrishnan",
+    username: "@vineethkrishnan",
+    description: "Open source projects and contributions",
+    icon: `<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />`,
+  },
+  {
+    label: "LinkedIn",
+    href: "https://www.linkedin.com/in/vineeth-n-k-40891265/",
+    username: "Vineeth N K",
+    description: "Professional profile and network",
+    icon: `<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" /><rect x="2" y="9" width="4" height="12" /><circle cx="4" cy="4" r="2" />`,
+  },
+];
+---
+
+<div class="section-divider"></div>
+
+<section class="section" id="contact">
+  <div class="fade-in">
+    <div class="section-label">
+      <span class="section-label-line"></span>
+      <span class="section-label-prefix">~/contact</span>
+    </div>
+    <h2 class="section-title">Get In Touch</h2>
+    <p class="section-subtitle">
+      Want to collaborate, have a question, or just want to say hi? Reach out through any of these channels.
+    </p>
+  </div>
+
+  <div class="contact-grid">
+    {links.map((link, i) => (
+      <a
+        href={link.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        class={`contact-card card fade-in stagger-${i + 1}`}
+      >
+        <div class="contact-top">
+          <div class="contact-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={link.icon} />
+          </div>
+          <svg class="contact-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+          </svg>
+        </div>
+        <h3>{link.label}</h3>
+        <p class="contact-username">{link.username}</p>
+        <p class="contact-desc">{link.description}</p>
+      </a>
+    ))}
+  </div>
+</section>
+
+<style>
+  .contact-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .contact-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .contact-card {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .contact-card:hover { color: var(--color-text); }
+
+  .contact-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .contact-icon { color: var(--color-accent); }
+
+  .contact-arrow {
+    color: var(--color-text-muted);
+    transition: color 0.2s, transform 0.2s;
+  }
+
+  .contact-card:hover .contact-arrow {
+    color: var(--color-accent);
+    transform: translate(2px, -2px);
+  }
+
+  .contact-card h3 {
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .contact-username {
+    font-size: 0.85rem;
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-weight: 500;
+  }
+
+  .contact-desc {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+</style>
