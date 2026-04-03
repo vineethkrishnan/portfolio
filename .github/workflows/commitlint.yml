@@ -29,6 +29,7 @@ jobs:
             hotfix
             style
           scopes: |
+            main
             hero
             about
             skills
@@ -45,6 +46,7 @@ jobs:
             deploy
             ci
             deps
+            release
           requireScope: false
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
