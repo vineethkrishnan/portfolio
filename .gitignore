@@ -25,3 +25,6 @@ pnpm-debug.log*
 
 # playwright
 .playwright-mcp/
+test-results/
+playwright-report/
+blob-report/
