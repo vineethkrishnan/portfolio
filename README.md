@@ -96,13 +96,6 @@ tests/
 | **Commit Lint** | PR | Validate PR title (conventional commits) |
 | **Security** | Push + PR + weekly | CodeQL, Dependency Review, Trivy |
 
-## Branch Protection
-
-- Squash merge only
-- Required checks: Build, Type Check, E2E, Visual Regression, CodeQL, Trivy, PR title
-- No force push, no branch deletion
-- Admin bypass for maintainer
-
 ## License
 
 [MIT](LICENSE) © Vineeth N K
