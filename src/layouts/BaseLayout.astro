@@ -8,9 +8,11 @@ interface Props {
   description?: string;
 }
 
+const yearsExp = new Date().getFullYear() - 2012;
+
 const {
   title = "Vineeth N K — Full Stack Developer",
-  description = "Writing code, building tools, and sharing what I learn along the way. Full Stack Developer with 12+ years of experience across TypeScript, Go, Rust, Python, and more.",
+  description = `Writing code, building tools, and sharing what I learn along the way. Full Stack Developer with ${yearsExp}+ years of experience across TypeScript, Go, Rust, Python, and more.`,
 } = Astro.props;
 ---
 

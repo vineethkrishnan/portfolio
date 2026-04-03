@@ -1,5 +1,7 @@
 ---
-
+const START_YEAR = 2012;
+const currentYear = new Date().getFullYear();
+const yearsExp = currentYear - START_YEAR;
 ---
 
 <section class="hero" id="hero">
@@ -29,7 +31,7 @@
       </p>
 
       <p class="hero-description fade-in stagger-4">
-        12+ years shipping production software across
+        {yearsExp}+ years shipping production software across
         <span class="hero-lang">TypeScript</span><span class="hero-sep">,</span>
         <span class="hero-lang">Go</span><span class="hero-sep">,</span>
         <span class="hero-lang">Rust</span><span class="hero-sep">,</span>
@@ -56,7 +58,7 @@
 
     <div class="hero-stats fade-in">
       <div class="hero-stat">
-        <span class="hero-stat-value">12+</span>
+        <span class="hero-stat-value">{yearsExp}+</span>
         <span class="hero-stat-label">Years</span>
       </div>
       <div class="hero-stat-dot"></div>

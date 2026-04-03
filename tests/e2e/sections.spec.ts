@@ -37,7 +37,9 @@ test.describe("Homepage Sections", () => {
     const stats = page.locator(".hero-stats");
     await expect(stats).toBeVisible();
 
-    await expect(stats).toContainText("12+");
+    // Years calculated dynamically from 2012 start year
+    const expectedYears = `${new Date().getFullYear() - 2012}+`;
+    await expect(stats).toContainText(expectedYears);
     await expect(stats).toContainText("40+");
     await expect(stats).toContainText("8+");
   });
