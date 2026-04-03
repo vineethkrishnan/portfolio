@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.3](https://github.com/vineethkrishnan/portfolio/compare/v0.0.2...v0.0.3) (2026-04-03)
+
+
+### Documentation
+
+* add project README with badges, structure, and CI docs ([d1fc126](https://github.com/vineethkrishnan/portfolio/commit/d1fc1268bf7c1ca2276f42878895c1c850ef09f4))
+
 ## [0.0.2](https://github.com/vineethkrishnan/portfolio/compare/v0.0.1...v0.0.2) (2026-04-03)
 
 
