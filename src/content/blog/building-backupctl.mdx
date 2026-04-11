@@ -1,0 +1,188 @@
+---
+title: "Building backupctl: what it took to replace a cron job with a backup service"
+description: "How a cron-and-restic setup outgrew itself, and the NestJS backup service I built to replace it — with two war stories I didn't see coming."
+pubDate: 2026-04-11
+tags: ["nestjs", "hexagonal-architecture", "backup", "restic", "open-source", "journey"]
+draft: false
+---
+
+# Building backupctl: what it took to replace a cron job with a backup service
+
+If you've ever strung `pg_dump | gzip | rclone` into a cron job and promised yourself you'd clean it up *later* — this post is for you. I've been there. And "later" usually arrives the day you add a second project to the same server.
+
+**backupctl** is the tool I built when I finally got tired of patching that script. It's a standalone Docker service that orchestrates scheduled backups across multiple projects — databases, files, or both — with encryption, notifications, an audit trail, and a proper CLI. One YAML, zero babysitting.
+
+This post is part of a series where I'm walking through each of my open-source projects: why I built them, what surprised me along the way, and what I'd do differently. I'm starting with backupctl because it's the one that taught me the most.
+
+## How I got here
+
+The setup was simple. One production server. One cron entry. `restic` writing encrypted snapshots to a Hetzner Storage Box over SFTP. For one project, it worked — and it worked well.
+
+Then a second app showed up. This one had files, not just a database. Then a third with both — and a Postgres engine where the first one had been MySQL. Each new project meant a new shell script, a new cron line, and a new pile of environment variables drifting around the server's home directory. The restic invocations started to diverge. Somewhere in the mix, I noticed that one of the projects had never been GPG-encrypted at all.
+
+That's when the thought arrived that every developer has had at 2am in front of a terminal: *what if I could configure this once, declare what I wanted backed up, and let a tool do the rest?*
+
+Not a script. Not another bash wrapper around restic. An actual service — one that could be opinionated about the right way to back things up, and boring about doing it the same way every time.
+
+That's the itch that became backupctl.
+
+## The design bet: NestJS and hexagonal architecture
+
+Here's where some readers are going to push back, and I want to get ahead of it.
+
+For a tool whose job is "run `pg_dump`, pipe it through `gpg`, call `restic`" — you do not need NestJS. You don't need dependency injection, you don't need hexagonal architecture, and you certainly don't need a Postgres audit database. A single Go binary would fit in 600 lines. A disciplined bash script would fit in 200. Both would work.
+
+I picked NestJS anyway, and I'd pick it again.
+
+The first reason is honest: I write NestJS every day. When your hands already know a framework, reaching for it isn't overengineering — it's velocity. For a side project built in evenings, velocity matters more than theoretical elegance.
+
+The second is structural. I wanted domain isolation — a place where "a backup consists of dump, encrypt, upload, notify" lives as pure logic, and the concrete tools (`pg_dump`, `gpg`, `restic`, Slack) are just adapters plugged into ports. Hexagonal architecture turned a stubborn question — *how do I add MySQL support without touching the orchestration code?* — into a lego problem. Write a new adapter. Register it in the module. Done.
+
+That was the bet: velocity from familiarity, extensibility from structure. A dozen adapters later, it's holding.
+
+```
+┌──────────────────────────────────────┐
+│          Infrastructure               │
+│   CLI · HTTP · Scheduler  (driving)   │
+│              │                        │
+│   ┌──────────┴───────────┐           │
+│   │   Application Layer   │           │
+│   │ Orchestrator·Registry │           │
+│   └──────────┬───────────┘           │
+│              │                        │
+│   ┌──────────┴───────────┐           │
+│   │    Domain Layer       │           │
+│   │ Ports·Models·Policies │           │
+│   └──────────┬───────────┘           │
+│              │                        │
+│   Adapters (driven)                   │
+│   Dumpers·Restic·Notifiers·GPG·Audit  │
+└──────────────────────────────────────┘
+```
+
+## What it actually does, in 60 seconds
+
+Here's the whole tool in one breath.
+
+You write one YAML file. Each entry is a project — a name, a cron, a database, a set of asset paths, and a destination. Out of the box, "database" means PostgreSQL, MySQL, or MongoDB. "Assets" means any list of paths on disk. Either one is optional, so a project can be database-only, files-only, or both.
+
+```yaml
+projects:
+  - name: myapp
+    cron: '0 3 * * *'
+    database:
+      type: postgres
+      host: myapp-db
+      name: myapp_prod
+      user: backup_user
+      password: ${MYAPP_DB_PASSWORD}
+    assets:
+      paths:
+        - /data/myapp/uploads
+    restic:
+      repository_path: /backups/myapp
+      password: ${MYAPP_RESTIC_PASSWORD}
+    encryption:
+      enabled: true
+      recipient: you@example.com
+    notification:
+      type: slack
+      config:
+        webhook_url: ${SLACK_WEBHOOK}
+    monitor:
+      type: uptime-kuma
+      config:
+        push_token: ${KUMA_TOKEN}
+```
+
+I've trimmed this for readability — the full schema with retention, hooks, and per-project overrides lives in the [configuration docs](https://backupctl.vineethnk.in/).
+
+When the cron fires — or when you run `backupctl run myapp` — the tool dumps the database, encrypts the dump with GPG, bundles it alongside the asset paths into a restic snapshot, ships it to a Hetzner Storage Box over SFTP, writes an audit row to its own Postgres, fires the Slack message, and pings an Uptime Kuma monitor so something screams if the run never happened.
+
+That's the whole flow. Everything else in the codebase — fifteen CLI commands, the dry-run validator, the audit log, the recovery logic, the lock files — exists to make that flow boring and repeatable.
+
+## The hard parts
+
+Three things in this project cost me more time than the rest combined. One of them I designed for from day one and still got wrong. One is a Unix permission problem wearing a Docker disguise. And one is a quiet bug that only shows up the day after a container gets killed in the middle of a run.
+
+Here's the story of each.
+
+### Crash recovery, and the JSONL that ate itself
+
+The first real lesson backupctl taught me is that a backup service is not, architecturally, a service that *runs backups*. It's a service that *survives failing to run backups*. That's a different problem, and it's the one hexagonal architecture forced me to stare at before I wrote any code.
+
+On paper, the failure modes were obvious. The container gets killed while a `pg_dump` is mid-flight. The restic upload gets interrupted because the Hetzner SFTP session dies. The audit Postgres is temporarily unreachable. A cron fires while the previous run is still holding the lock. For each of these I wrote code before they could happen — a file-based lock, a fallback audit writer that dumps to JSONL, a startup recovery routine that replays the fallback file into Postgres when the service comes back up.
+
+```typescript
+// file-backup-lock.adapter.ts
+fd = fs.openSync(
+  lockPath,
+  fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY,
+);
+```
+
+That one line — `O_CREAT | O_EXCL` — is the only thing standing between a stuck cron and two concurrent backups corrupting the same restic repository. It's atomic at the filesystem level, so two processes trying to acquire the lock at the same microsecond will not both succeed. Boring, correct, good.
+
+Then I ran it in production.
+
+The hardening commit `a976869` is where the paper design met reality. *"Wrap trackProgress in try/catch, per-line JSONL error handling. Atomic JSONL clear, scoped startup recovery, lock timeout."* Each of those phrases is a bug I didn't see coming.
+
+**Per-line JSONL error handling** translates to: one partial write from a killed container left a single corrupt line in the middle of the fallback file, and the naive `JSON.parse` on startup saw it, threw, and refused to replay *any* of the surrounding valid entries. I lost an audit window because the replay was all-or-nothing.
+
+**Scoped startup recovery** is the other one. My first pass at orphan detection would happily scan the audit table on boot and mark anything it saw in progress as crashed — which meant that on a fast restart, it would flag the *currently running* backup as an orphan. Very fun to debug.
+
+The fix was to scope recovery to entries from previous process lifetimes, and to clear the fallback file atomically (write to `.tmp`, then rename) so a crash during the clear itself couldn't orphan the in-memory write.
+
+The lesson: hexagonal architecture made me design for the right failure modes, but it didn't stop me from writing their recovery code wrong. Designing for crashes and *testing* against crashes are two different disciplines. I learned the second one from the git history.
+
+**A twin problem: audit, but for the audit itself.** The same hardening pass touched the notifier path — because it turns out *"audit DB is down"* and *"notifier is down"* are the same problem wearing different clothes. If the audit write fails, the run result falls through to the JSONL fallback. If the notification also fails, that falls through too. On next startup, both get replayed. The principle I ended up writing on a sticky note after that commit: **the system should keep its promise to back up your data even when its own bookkeeping is broken.** Everything else in the recovery module is a consequence of that one sentence.
+
+### The Docker socket trilemma
+
+Here's a scenario. You ship backupctl. It works perfectly on your laptop — everything lives in one `docker compose` project, every container is on the same bridge network, every hostname resolves. You deploy to production. You run the first backup.
+
+```
+pg_dump: error: connection to server at "myapp-db" failed: Connection refused
+```
+
+Of course it does. backupctl is its own compose project. `myapp-db` belongs to another. The two containers are on separate networks and don't share a DNS namespace, so the hostname doesn't even resolve.
+
+The fix is mechanical: `docker network connect myapp_default backupctl`, and the next run works. Feels good. Move on.
+
+Then the `myapp` team runs `docker compose up -d --force-recreate`. The target container comes back with a fresh network attachment — and backupctl, which was connected to the *old* network, no longer is. The next backup fails silently at 3am, and the Uptime Kuma monitor is the thing that tells me, because nobody watches backup logs until they need to.
+
+OK. The fix can't be *"remember to run `docker network connect` after every deploy."* It has to be automatic.
+
+The shape looks obvious. Have backupctl connect itself to the target network before the dump. The project config already names the target container; add the network name to it, and run `docker network connect` from inside the backupctl container before each backup.
+
+The problem is that *from inside the backupctl container* is where the fun begins.
+
+To run `docker network connect`, you need the Docker CLI. Install it in the image. Fine. To *use* the Docker CLI, you need to talk to the Docker daemon — which means mounting `/var/run/docker.sock` into the container. Which means backupctl can now do anything Docker can do on the host: start containers, stop them, mount arbitrary volumes. It's a real security tradeoff, and it earned its own page in the docs.
+
+But that's not the end. Mounting the socket doesn't give you permission to *use* it. The socket is owned by `root:docker` on the host, and the backupctl container runs as non-root. So you need the container's process inside the `docker` group — `group_add: [999]` in compose. Which works, until a different host distro gives the socket a different GID, and the container boots with the wrong `group_add`, and you're back to `Permission denied` on `/var/run/docker.sock`.
+
+Three problems in a trench coat: a security boundary, a Unix permission bit, and a cross-distro detail. Each one is small. Stacked, they turned a 20-minute feature into a weekend, and earned a dedicated page in the docs ([17-network.md](https://backupctl.vineethnk.in/network)) just so other people can find their host's GID without crying.
+
+The takeaway I keep coming back to: **the moment you let a containerized service reach into its own host, you've made infrastructure a part of the domain.** That's not automatically wrong — but it's a line worth crossing on purpose, not by accident.
+
+## What I'd do differently
+
+Here's what I'd keep, what I'd change, and what's already in motion.
+
+**Keep: NestJS and hexagonal architecture.** I'd make the same bet tomorrow. Not because they're the "right" tools for a backup service — they're not, for most people — but because they were the right tools *for me*, and because the extensibility story turned out to be real. Every adapter I've added since v0.1.0 has slotted in without touching the orchestration code. That's the whole promise of hexagonal, and it actually works.
+
+**Change: Postgres as the audit database.** This is the one I'd reverse. Nothing in backupctl's current feature set needs Postgres — no JSON columns, no full-text search, no analytical queries, no multi-writer story. It's a handful of append-only tables with a foreign key or two. SQLite would do the same job with zero ops overhead: no container, no user management, no migrations served over TCP. Picking Postgres early made the project *feel* serious, which is a bad reason to pick a database. If I were starting again, I'd start on SQLite and migrate if there was ever a reason to. There still isn't.
+
+**Already in motion: a web UI.** The next feature I'm planning is a small dashboard — browsing audit history, triggering ad-hoc runs, watching the progress of a live backup. A CLI is fine for me, but the moment someone else wants to see *"which projects failed last night,"* a web UI stops being optional. NestJS is well-built for that pivot: the domain code doesn't care whether the driver is a CLI, a cron, or an HTTP controller. The Uptime Kuma integration is already shaped as a generic monitor port, so a future dashboard can sit next to it without rewiring the domain.
+
+## Where to go from here
+
+If any of this is useful, the whole thing is open source:
+
+- **Code:** [github.com/vineethkrishnan/backupctl](https://github.com/vineethkrishnan/backupctl)
+- **Docs:** [backupctl.vineethnk.in](https://backupctl.vineethnk.in/)
+- **Image:** `docker pull vineethnkrishnan/backupctl:latest`
+
+This is the first post in a series where I'm walking through each of my open-source projects — the decisions, the surprises, the rewrites. Next up is one of `diskdoc`, `dockit`, or `agent-sessions`; I'll pick whichever has the best story to tell.
+
+If you're wrestling with something similar — or if you've already built a better version of any of this and want to tell me where I'm wrong — I'd rather hear about the mistake now than discover it in my next backup. Find me on [GitHub](https://github.com/vineethkrishnan).
