@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4](https://github.com/vineethkrishnan/portfolio/compare/v0.0.3...v0.0.4) (2026-04-03)
+
+
+### Documentation
+
+* remove branch protection section from README ([f0e05e2](https://github.com/vineethkrishnan/portfolio/commit/f0e05e2d6c5815c1b306b49aa0960f4c78cdcccb))
+
 ## [0.0.3](https://github.com/vineethkrishnan/portfolio/compare/v0.0.2...v0.0.3) (2026-04-03)
 
 
