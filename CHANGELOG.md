@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.5](https://github.com/vineethkrishnan/portfolio/compare/v0.0.4...v0.0.5) (2026-04-11)
+
+
+### Documentation
+
+* **blog:** add backupctl project deep dive post ([#4](https://github.com/vineethkrishnan/portfolio/issues/4)) ([3bd949c](https://github.com/vineethkrishnan/portfolio/commit/3bd949c9c4d69a60660927321cf3c3a94ad64072))
+
 ## [0.0.4](https://github.com/vineethkrishnan/portfolio/compare/v0.0.3...v0.0.4) (2026-04-03)
 
 
