@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.6](https://github.com/vineethkrishnan/portfolio/compare/v0.0.5...v0.0.6) (2026-04-11)
+
+
+### Bug Fixes
+
+* **blog:** ensure long posts become visible on scroll ([f055851](https://github.com/vineethkrishnan/portfolio/commit/f0558514f656b8493422d4d213bba560bedf5f80))
+* **blog:** ensure long posts become visible on scroll ([#8](https://github.com/vineethkrishnan/portfolio/issues/8)) ([a58ad7c](https://github.com/vineethkrishnan/portfolio/commit/a58ad7c23d9b75e5f3b67b500ad00a14948d2b5c))
+
 ## [0.0.5](https://github.com/vineethkrishnan/portfolio/compare/v0.0.4...v0.0.5) (2026-04-11)
 
 
