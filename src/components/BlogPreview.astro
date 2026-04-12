@@ -78,6 +78,7 @@ const posts = (await getCollection("blog"))
     gap: 1.5rem;
     color: var(--color-text);
     text-decoration: none;
+    overflow: hidden;
   }
 
   .blog-card:hover { color: var(--color-text); }
@@ -87,6 +88,7 @@ const posts = (await getCollection("blog"))
     flex-direction: column;
     gap: 0.3rem;
     flex: 1;
+    min-width: 0;
   }
 
   .blog-card time {
@@ -113,6 +115,7 @@ const posts = (await getCollection("blog"))
 
   .blog-tags {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.35rem;
     margin-top: 0.25rem;
   }
