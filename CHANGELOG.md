@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.8](https://github.com/vineethkrishnan/portfolio/compare/v0.0.7...v0.0.8) (2026-04-12)
+
+
+### Bug Fixes
+
+* **blog:** fix homepage blog preview overflow on mobile ([#12](https://github.com/vineethkrishnan/portfolio/issues/12)) ([2bd314e](https://github.com/vineethkrishnan/portfolio/commit/2bd314e3005bc7db4a5424214d8bddefae0a2866))
+
 ## [0.0.7](https://github.com/vineethkrishnan/portfolio/compare/v0.0.6...v0.0.7) (2026-04-12)
 
 
