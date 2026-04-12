@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.7](https://github.com/vineethkrishnan/portfolio/compare/v0.0.6...v0.0.7) (2026-04-12)
+
+
+### Documentation
+
+* **blog:** add agent-sessions project deep dive post ([#9](https://github.com/vineethkrishnan/portfolio/issues/9)) ([794b04d](https://github.com/vineethkrishnan/portfolio/commit/794b04d41402b219f6049b5c286ce93b8512ed30))
+* **blog:** add diskdoc and dockit comparison post ([#10](https://github.com/vineethkrishnan/portfolio/issues/10)) ([dadaf56](https://github.com/vineethkrishnan/portfolio/commit/dadaf562a59ad61f86aeea79ccc3defa210515e0))
+
 ## [0.0.6](https://github.com/vineethkrishnan/portfolio/compare/v0.0.5...v0.0.6) (2026-04-11)
 
 
