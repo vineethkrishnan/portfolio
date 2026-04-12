@@ -1,0 +1,338 @@
+---
+title: "diskdoc and dockit: same problem, two languages, different answers"
+description: "I built two disk cleanup CLIs — one in Rust with a TUI, one in Go with risk scoring. Here's what each language and design taught me that the other couldn't."
+pubDate: 2026-04-12
+tags: ["rust", "go", "cli", "docker", "tui", "open-source"]
+draft: false
+---
+
+# diskdoc and dockit: same problem, two languages, different answers
+
+I built two tools that clean up disk space. Both are CLIs. Both deal with Docker. Both ship as a single binary. And if you put them side by side, they look like the same project in two languages.
+
+They're not.
+
+**diskdoc** is a Rust TUI that walks your entire filesystem in parallel, classifies what it finds — logs, caches, Docker artifacts, build output — and lets you browse and delete interactively. It answers the question *"where did my disk space go?"*
+
+**dockit** is a Go CLI that talks directly to the Docker daemon, scores every resource by deletion risk, and gives you a cleanup plan. It answers the question *"which Docker resources can I safely delete?"*
+
+One is wide and visual. The other is narrow and opinionated. Building both taught me things about Rust, Go, and tool design that building either alone wouldn't have.
+
+This is the third post in a series on my open-source projects. The [first covered backupctl](/blog/building-backupctl), the [second covered agent-sessions](/blog/building-agent-sessions). This one is a two-for-one.
+
+## Why two tools
+
+The honest version: I didn't plan to build two.
+
+diskdoc came first. I wanted to learn Rust, and "build a disk usage analyzer" is the kind of project that forces you to deal with the filesystem, concurrency, error handling, and a real UI — all the things that make Rust interesting and hard. I chose it as a learning vehicle, and the tool itself was the byproduct.
+
+It worked well for general disk analysis. But when I used it to investigate Docker disk usage specifically, the limitations were obvious. diskdoc sees Docker the way `du` sees Docker: a pile of directories under `/var/lib/docker`. It can tell you that the `overlay2` directory is 40GB, but it can't tell you *which images* are eating that space, whether those images back running containers, or which ones are dangling. For that, you need to talk to the Docker daemon — not the filesystem.
+
+dockit started there. Not "let me rebuild diskdoc in Go" but "let me build the Docker-specific tool that diskdoc can't be." Go was the natural fit: Docker's own SDK is in Go, the tooling ecosystem is mature, and a single static binary is the default output, not a build target you have to configure.
+
+Two tools, two languages, two scopes. But the interesting part isn't the difference in scope — it's how the language shaped the design in ways I didn't expect.
+
+## Rust shaped diskdoc into a TUI
+
+Rust's type system and ownership model made me think about the program as a *state machine* before I wrote any UI code.
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppMode {
+    Scanning,
+    Browsing,
+    DeleteConfirmation,
+    Dashboard,
+    DashboardCleanupConfirmation,
+    About,
+}
+```
+
+Six states. Every keypress is a transition between them. The `App` struct holds the current mode, the file list, the selection index, and the injected dependencies — and nothing else. There's no "accidentally in two states at once" because `AppMode` is an enum, not a pair of booleans.
+
+The TUI followed naturally. If you already have an explicit state machine, rendering becomes a pure function: take the current state, produce a frame. Ratatui (the Rust TUI library) is designed exactly for this — you call `terminal.draw(|f| draw(f, &app))` in a loop, and the draw function pattern-matches on the mode to decide what to show.
+
+```rust
+loop {
+    terminal.draw(|f| tui::draw(f, app))?;
+
+    if crossterm::event::poll(Duration::from_millis(100))? {
+        if let Event::Key(key) = crossterm::event::read()? {
+            match app.mode {
+                AppMode::DeleteConfirmation => match key.code {
+                    KeyCode::Char('y') | KeyCode::Enter => app.confirm_delete(),
+                    KeyCode::Char('n') | KeyCode::Esc => app.cancel_delete(),
+                    _ => {}
+                },
+                // ... other modes
+            }
+        }
+    }
+
+    app.on_tick();
+}
+```
+
+100ms polling. Drain up to 100 scan events per frame. Render. Repeat. The TUI stays responsive while the scanner runs on a separate thread, sending results through an `mpsc` channel.
+
+I don't think I would have built a TUI in Go. Not because Go can't do it — it can — but because Rust's enums and match exhaustiveness made the state machine feel safe to extend. Every time I added a new mode, the compiler told me every place I needed to handle it. In Go, I'd have been maintaining that discipline manually with a `switch` statement and hoping I didn't miss a case.
+
+## Go shaped dockit into an opinion
+
+Go didn't push me toward a TUI. It pushed me toward *decisions*.
+
+The Docker SDK is a Go library. The standard CLI toolkit (Cobra) gives you subcommands with flags. The ecosystem defaults are: structured output, composable commands, `--json` for automation. So dockit became a tool with opinions instead of a tool with a canvas.
+
+The biggest opinion is the risk scoring system:
+
+```go
+const (
+    ScoreSafe      Score = "SAFE"
+    ScoreReview    Score = "REVIEW"
+    ScoreProtected Score = "PROTECTED"
+)
+```
+
+Every Docker resource — container, image, volume — gets classified. Running containers are `PROTECTED`. Dangling images older than 7 days are `SAFE`. Stopped containers created last week are `REVIEW`. The scorer is 60 lines of Go, and it encodes a real position: *recently-created resources deserve a second look, even if they're unused.*
+
+```go
+func (s *Scorer) ScoreContainer(c *models.Container) {
+    if c.State == "running" || c.State == "restarting" || c.State == "paused" {
+        c.Score = models.ScoreProtected
+        c.Reason = "Container is currently active"
+        return
+    }
+
+    age := time.Since(c.Created)
+    threshold := time.Duration(s.Config.ReviewDays) * 24 * time.Hour
+
+    if age < threshold {
+        c.Score = models.ScoreReview
+        c.Reason = "Container stopped, but created recently"
+        return
+    }
+
+    c.Score = models.ScoreSafe
+    c.Reason = "Container is stopped and old"
+}
+```
+
+This is what `docker system prune` doesn't do. `prune` is a binary: delete or don't. dockit's scoring system introduces a middle ground — "you should probably look at this before I delete it" — which is the actual mental model most developers have when cleaning up Docker resources.
+
+The cleanup command defaults to dry-run. You have to pass `--apply` to actually delete anything, and even then it asks for confirmation:
+
+```go
+if !applyCleanup {
+    plan.PrintDryRun()
+    return nil
+}
+```
+
+diskdoc has confirmation dialogs too, but they're modal — you select an item, press `d`, see the path, confirm. dockit shows you the *entire plan* before you touch anything. Different UX, different safety model. The modal works for interactive browsing. The plan works for auditing.
+
+## The parallel scanning story (Rust)
+
+The piece of diskdoc that made me appreciate Rust the most is the filesystem scanner.
+
+```rust
+pub fn start_scan(root: &Path, tx: Sender<ScanEvent>) {
+    let root_path = root.to_path_buf();
+
+    thread::spawn(move || {
+        let walk = WalkDir::new(&root_path)
+            .skip_hidden(false)
+            .sort(true)
+            .parallelism(Parallelism::RayonNewPool(4));
+
+        for entry in walk {
+            match entry {
+                Ok(dir_entry) => {
+                    let path = dir_entry.path();
+                    let meta = dir_entry.metadata();
+                    // ... classify and send
+                    if tx.send(ScanEvent::NewEntry(stats)).is_err() {
+                        break; // Receiver dropped
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(ScanEvent::Error(e.to_string()));
+                }
+            }
+        }
+        let _ = tx.send(ScanEvent::Complete);
+    });
+}
+```
+
+`jwalk` is the crate doing the heavy lifting — it wraps Rayon to walk directories across 4 threads, and the results feed into an unbounded `mpsc` channel. The TUI's `on_tick` drains up to 100 events per frame, so the UI stays responsive even when the scanner is churning through millions of files.
+
+What I like about this code is what it *doesn't* need. No mutex around the file list. No lock on the scan state. The channel is the synchronization primitive, and Rust's ownership model guarantees that the sender and receiver can't race on shared data because there *is* no shared data. The scanner owns its thread. The UI owns the `App` struct. They communicate through messages.
+
+In Go I would have reached for a goroutine and a channel, which is structurally similar — but the safety guarantee would be convention, not compilation.
+
+## The Docker SDK story (Go)
+
+dockit's advantage is that it doesn't guess about Docker. It asks.
+
+```go
+func (c *Client) GetContainers(ctx context.Context) ([]*models.Container, error) {
+    rawContainers, err := c.api.ContainerList(ctx, types.ContainerListOptions{
+        All: true, Size: true,
+    })
+    // ...
+}
+```
+
+`Size: true` is the detail that matters. Without it, the Docker daemon returns containers without calculating their writable layer size — which makes the output useless for disk analysis. With it, the daemon does the work (it takes a bit longer), and you get real numbers.
+
+But the SDK has quirks. `Image.Containers` — the field that tells you how many containers use an image — is unreliable. `ImageList` returns `-1` for this field unless you've recently called `/system/df`. So dockit does its own cross-reference:
+
+```go
+func Analyze(containers []*models.Container, images []*models.Image, volumes []*models.Volume) *CorrelatedData {
+    imgUsage := make(map[string]int64)
+    for _, c := range containers {
+        imgUsage[c.ImageID]++
+    }
+
+    for _, img := range images {
+        localCount := imgUsage[img.ID]
+        if localCount > img.Containers {
+            img.Containers = localCount
+        }
+    }
+
+    return &CorrelatedData{Containers: containers, Images: images, Volumes: volumes}
+}
+```
+
+Build a map of image ID to container count. If the local count is higher than what Docker reported, use the local count. This is the kind of detail you only discover by testing against real Docker daemons — the SDK documentation doesn't warn you.
+
+diskdoc can't do any of this. It sees `/var/lib/docker/overlay2` as a directory and reports its size. Useful, but it can't tell you that half of those layers belong to a dangling image you pulled six months ago and forgot about.
+
+## The heuristics chain (Rust) vs the scorer (Go)
+
+Both tools need to classify what they find. They solve this differently, and the difference reveals something about what each tool values.
+
+diskdoc uses a chain-of-responsibility pattern with pluggable heuristics:
+
+```rust
+pub struct HeuristicsEngine {
+    heuristics: Vec<Box<dyn Heuristic + Send + Sync>>,
+}
+
+impl HeuristicsEngine {
+    pub fn new() -> Self {
+        Self {
+            heuristics: vec![
+                Box::new(LogHeuristic),
+                Box::new(NpmHeuristic),
+                Box::new(ComposerHeuristic),
+                Box::new(AptHeuristic),
+                Box::new(CacheHeuristic),
+                Box::new(DockerHeuristic),
+            ],
+        }
+    }
+
+    pub fn analyze(&self, path: &Path, is_dir: bool) -> FileType {
+        for h in &self.heuristics {
+            if let Some(t) = h.detect(path, is_dir) {
+                return t;
+            }
+        }
+        FileType::Normal
+    }
+}
+```
+
+First match wins. Order matters — `NpmHeuristic` runs before `CacheHeuristic` so that `.npm/_cacache` gets flagged as npm cache, not generic cache. Each heuristic is a trait implementation, so adding a new one means writing a struct with a `detect` method and inserting it at the right position in the chain.
+
+This works for filesystem analysis because the input is a *path*. Paths are simple. You can match on extensions, directory names, well-known locations. The heuristic doesn't need context beyond the path itself.
+
+dockit's scorer is different. It doesn't look at paths — it looks at *state*:
+
+```go
+func (s *Scorer) ScoreImage(img *models.Image) {
+    if img.Containers > 0 {
+        img.Score = models.ScoreProtected
+        img.Reason = "Image is currently backing a container"
+        return
+    }
+
+    if !img.Dangling {
+        img.Score = models.ScoreReview
+        img.Reason = "Image specifies a repository/tag but is unused"
+        return
+    }
+
+    age := time.Since(img.Created)
+    if age < threshold {
+        img.Score = models.ScoreReview
+        img.Reason = "Image is dangling but was created recently"
+        return
+    }
+
+    img.Score = models.ScoreSafe
+    img.Reason = "Image is dangling and old"
+}
+```
+
+The scorer knows about relationships (does this image back a container?), temporal context (how old is it?), and naming (is it dangling?). It's not matching strings — it's reasoning about the resource graph. This is only possible because dockit has the Docker SDK, which gives it the full picture.
+
+The heuristics chain is extensible. The scorer is opinionated. Both are right for their context.
+
+## The runaway log problem
+
+One of dockit's most practical features is `dockit logs` — it finds containers whose log files are silently eating disk.
+
+```go
+func (c *Client) GetLogMetrics(ctx context.Context) ([]*models.LogMetrics, error) {
+    for _, cnt := range containers {
+        info, err := c.api.ContainerInspect(ctx, cnt.ID)
+        if err != nil {
+            continue
+        }
+
+        m := &models.LogMetrics{
+            ContainerID:   cnt.ID,
+            ContainerName: name,
+            LogPath:       info.LogPath,
+        }
+
+        if info.LogPath != "" {
+            stat, err := os.Stat(info.LogPath)
+            if err == nil {
+                m.LogSize = stat.Size()
+            }
+        }
+
+        metrics = append(metrics, m)
+    }
+    return metrics, nil
+}
+```
+
+Docker stores container logs at `/var/lib/docker/containers/{id}/{id}-json.log`. If a container writes without rotation — no `--log-opt max-size` — that file grows until the disk fills. I've seen 30GB log files from a single container that printed debug output nobody was reading.
+
+The trick is the `ContainerInspect` call. The container list doesn't include the log path — you have to inspect each container individually to get `info.LogPath`, then `os.Stat` the file. It's an N+1 query pattern, but for Docker containers (usually dozens, not thousands) it's fine.
+
+diskdoc would see the same files, but it would flag them as generic log files in `/var/lib/docker`. It wouldn't know which container produced them, whether that container is still running, or whether the log driver is misconfigured. Context matters.
+
+## What the comparison taught me
+
+**Language shapes design more than you expect.** I didn't choose to build a TUI in Rust and a CLI in Go because I sat down and evaluated the tradeoffs. Rust's type system made a state machine feel natural, and ratatui was right there. Go's Docker SDK and Cobra ecosystem made structured CLI output feel natural, and `--json` was right there. The languages didn't force the designs, but they made certain designs *frictionless* — and friction is what kills side projects.
+
+**Scope is a design decision, not a limitation.** diskdoc's broad scope (all files, all types) means it's useful everywhere but shallow on any specific domain. dockit's narrow scope (Docker only) means it's useless outside Docker but deep where it matters — risk scoring, log detection, SDK-level introspection. Neither is better. They serve different moments.
+
+**Safety has more than one shape.** diskdoc uses confirmation modals: select, press delete, confirm. dockit uses a three-layer system: classify, plan, confirm. The modal works when you're *browsing* and spot something to delete. The plan works when you want to *audit* before you act. I use both, for different situations.
+
+**Two small tools beat one clever tool.** I could have tried to merge diskdoc and dockit — a Rust TUI that also talks to the Docker daemon. It would have been harder to build, harder to test, harder to release. Instead I have two binaries that do one thing each. The Unix way isn't always the right way, but for developer tools that solve a specific itch, it usually is.
+
+## Where to go from here
+
+Both tools are open source:
+
+- **diskdoc (Rust):** [github.com/vineethkrishnan/diskdoc](https://github.com/vineethkrishnan/diskdoc)
+- **dockit (Go):** [github.com/vineethkrishnan/dockit](https://github.com/vineethkrishnan/dockit)
+
+This is the third post in the series. If you're curious about the projects or want to tell me why I should have written both in Zig, find me on [GitHub](https://github.com/vineethkrishnan).
