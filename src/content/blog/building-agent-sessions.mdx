@@ -1,0 +1,223 @@
+---
+title: "Building agent-sessions: a universal session manager for the AI CLI era"
+description: "Five AI coding agents, five incompatible session formats, one terminal UI to browse them all — and the reverse-engineering it took to get there."
+pubDate: 2026-04-12
+tags: ["typescript", "cli", "ai-tooling", "hexagonal-architecture", "react", "open-source"]
+draft: false
+---
+
+# Building agent-sessions: a universal session manager for the AI CLI era
+
+If you use an AI coding agent from the terminal — Claude Code, Cursor, Gemini CLI, Codex, Windsurf — you've probably had this moment. You finished a session two days ago. It was productive. You solved a tricky migration, and now you need to pick up where you left off. The agent supports `--resume`, and you vaguely remember copying the session ID somewhere.
+
+You didn't copy it.
+
+So you go hunting. Claude stores sessions as JSONL files in `~/.claude/projects/`. Cursor buries them in SQLite databases under `~/.cursor/chats/`. Gemini drops JSON files in a temp directory with hashed folder names. Each agent has its own layout, its own format, and none of them offer a way to browse what's there. You're left doing `ls -lt | head` and squinting at UUIDs.
+
+**agent-sessions** is the tool I built to fix that. It's an interactive terminal UI that discovers sessions across all five agents, lets you search, preview, and resume any of them — one command, one interface, regardless of which agent created the conversation.
+
+This is the second post in a series where I walk through my open-source projects. The [first one covered backupctl](/blog/building-backupctl), a backup orchestration service. This one is about a smaller tool with a different kind of problem: not "how do I orchestrate a complex workflow" but "how do I make sense of five vendors' undocumented storage formats."
+
+## How I got here
+
+It started with Claude Code. I was using it heavily — ten, fifteen sessions a day across different projects. Each session creates a `.jsonl` file under `~/.claude/projects/{encoded-project-path}/`, and after a few weeks I had hundreds of them. Finding the right one meant mentally mapping encoded directory names back to project paths, then grepping JSONL for the first user message to figure out what the session was about.
+
+The first version of agent-sessions was Claude-only. A React-in-the-terminal app (more on that choice in a minute) that read the JSONL files, extracted metadata, and presented them in a searchable table. Session ID, project, branch, first message, message count. Pick one, hit Enter, resume. Done.
+
+It worked. Then I noticed I was doing the same archaeology for Cursor sessions, and for Gemini. Same problem, different file formats. The code I'd written was already shaped around a provider abstraction — it just didn't know it yet.
+
+## The architecture: ports and providers
+
+Here's the core insight that turned a single-agent tool into a multi-agent one. Every AI coding agent, despite their wildly different storage formats, produces the same *conceptual* output: a list of conversations, each with an ID, a project context, a timestamp, a preview of what was discussed, and a way to resume it.
+
+That's a port.
+
+```typescript
+export interface SessionProviderPort {
+  readonly name: string;
+  buildResumeArgs(sessionId: string): { command: string; args: string[] };
+  findAll(): Promise<Session[]>;
+  getDetail(filePath: string): Promise<SessionDetail>;
+}
+```
+
+Four methods. Every agent in the ecosystem — Claude, Cursor, Gemini, Codex, Windsurf — implements this interface. The `findAll` method knows where to look, how to parse, and how to extract a `Session` domain object. The `buildResumeArgs` method knows the CLI invocation for that agent. Everything upstream — the TUI, the search, the preview pane — talks to the port, never to a specific provider.
+
+Adding a new agent is a self-contained task: write a class that implements `SessionProviderPort`, register it in the module, done. No UI changes, no search changes, no resume logic changes. The Windsurf provider was added in a single PR without touching any existing provider code.
+
+The multi-agent repository ties them together:
+
+```typescript
+export class MultiAgentSessionRepositoryAdapter
+  implements SessionRepositoryPort, ProviderManagementPort
+{
+  async findAll(): Promise<Session[]> {
+    const results = await Promise.all(
+      providersToSearch.map((provider) =>
+        provider.findAll().catch(() => [] as Session[]),
+      ),
+    );
+    return results.flat().sort((a, b) =>
+      b.modifiedAt.getTime() - a.modifiedAt.getTime(),
+    );
+  }
+}
+```
+
+Three things to note. First, providers run concurrently — `Promise.all`, not sequential. Second, each provider's failure is isolated — `.catch(() => [])` means a missing Cursor installation doesn't crash the Claude listing. Third, results merge into a single timeline sorted by modification date. You see all your recent AI conversations in one stream, regardless of which agent created them.
+
+## The hard parts: five formats, five surprises
+
+The architecture was the easy part. The hard part was figuring out what each agent actually writes to disk, because none of them document their session storage format.
+
+### Claude: streaming JSONL without eating memory
+
+Claude Code writes one JSONL file per session. Each line is a JSON object with a `type` field (`"user"` or `"assistant"`), a `message` object, and metadata like `gitBranch` and `cwd`. Straightforward — until you have a session with 200 turns where the assistant generated thousands of lines of code. Those files get large, and I needed to extract the preview (first user message) without reading the whole thing into memory.
+
+```typescript
+export async function parseSessionFileAsync(
+  filePath: string,
+): Promise<ParsedSessionMetadata> {
+  const stream = fs.createReadStream("", { fd, encoding: "utf-8" });
+  const rl = readline.createInterface({ input: stream });
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type === "user") {
+        userCount++;
+        if (userCount === 1) {
+          preview = extractMessageText(entry)
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 80);
+          gitBranch = entry.gitBranch ?? "";
+          cwd = entry.cwd ?? "";
+        }
+      } else if (entry.type === "assistant") {
+        assistantCount++;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return { preview, gitBranch, cwd, messageCount: userCount + assistantCount };
+}
+```
+
+The `readline` interface streams line-by-line. Metadata comes from the first user message; the rest of the file is just counted, not stored. A malformed line (truncated write, partial JSON from a killed process) gets silently skipped — same lesson backupctl taught me about per-line error tolerance.
+
+### Cursor: hex-encoded SQLite archaeology
+
+Cursor was the one that made me reach for a real database driver.
+
+Sessions live as SQLite databases at `~/.cursor/chats/{hash}/{uuid}/store.db`. Each database has two tables: `meta` and `blobs`. The `meta` table stores a single row whose `value` column is a hex-encoded JSON string containing the session name and agent ID. The `blobs` table stores messages, also hex-encoded.
+
+```typescript
+private readMeta(db: Database): CursorMeta | null {
+  const row = db.prepare("SELECT value FROM meta").get();
+  if (!row) return null;
+  return JSON.parse(
+    Buffer.from(row.value, "hex").toString("utf-8"),
+  );
+}
+```
+
+That `Buffer.from(row.value, "hex")` is the entire Cursor story in one line. The data isn't encrypted or compressed — it's just hex-encoded UTF-8. I suspect this is an artifact of Cursor's internal state management serialization, not a deliberate obfuscation. But it means you can't just open the database and read it; you have to know the encoding exists.
+
+The message format has its own quirk. User messages are wrapped in XML-like tags:
+
+```
+<user_query>What's the best way to handle auth?</user_query>
+```
+
+Extracting a preview means parsing that structure, falling back to raw text if the tags aren't present, and handling the cases where `content` is a string, an array of blocks, or a nested object. The `stringifyContent` utility ended up being shared across multiple providers because this shape inconsistency isn't unique to Cursor — it's an industry-wide pattern.
+
+```typescript
+export function stringifyContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) =>
+        typeof part === "string" ? part : part.text || JSON.stringify(part),
+      )
+      .join("\n");
+  }
+  if (!content) return "";
+  return JSON.stringify(content);
+}
+```
+
+### The content normalization problem
+
+This function — `stringifyContent` — looks like a utility, but it's actually the answer to the hardest design question in the project: *what is a message?*
+
+Every agent agrees that a message has a `role` and `content`. None of them agree on what `content` looks like. Claude uses `{ type: "text", text: "..." }` blocks inside an array. Cursor sometimes uses plain strings, sometimes arrays. Gemini nests content inside `parts`. Codex follows the OpenAI format with its own variations.
+
+The domain model doesn't care. A `SessionMessage` has `role: "user" | "assistant"` and `content: string`. The complexity lives in each provider's adapter, and `stringifyContent` is the shared escape hatch for when you've done your best to extract clean text and just need the result as a string, whatever shape it arrived in.
+
+## React in the terminal
+
+Yes, the UI is React. Not a web app pretending to be a terminal — actual React components rendered to the terminal via [Ink](https://github.com/vadimdemedes/ink).
+
+This sounds like a gimmick until you build something interactive. Terminal UIs need state management (selected row, scroll position, search filter, active provider, modal visibility). They need component composition (the session table, the preview pane, the agent selector are independent pieces that share state). They need to react to input events and re-render efficiently.
+
+Ink gives you all of React's composition model — hooks, components, effects — with a renderer that outputs ANSI escape sequences instead of DOM nodes. The session table is a component. The preview pane is a component. They communicate through a shared `use-sessions` hook. When you press `/` to search, the hook updates a filter string, the table re-renders with matching rows, and the selection clamps to the new bounds. It's the same mental model as a web app, but the output is your terminal.
+
+The one place this gets interesting is session resumption. When you press Enter on a session, the Ink app can't just `exec` into the agent — it needs to tear down the terminal UI first. The flow is:
+
+```typescript
+let pendingResume: ResumeRequest | null = null;
+
+const instance = render(
+  <App onResume={(request) => { pendingResume = request; }} />,
+);
+
+instance.waitUntilExit().then(() => {
+  if (pendingResume) {
+    const resumeArgs = buildResumeArgs(
+      pendingResume.sessionId,
+      pendingResume.providerName,
+    );
+    spawnSync(resumeArgs.command, resumeArgs.args, {
+      stdio: "inherit",
+      cwd: pendingResume.cwd,
+    });
+  }
+});
+```
+
+The app signals the resume intent, exits cleanly, and then the CLI entry point spawns the agent process with `stdio: "inherit"` so it takes over the terminal. The `cwd` from the original session is restored, so the agent picks up in the right directory. It's a two-phase handoff: React owns the UI, then yields to the agent.
+
+## The fzf escape hatch
+
+Not everyone wants a full TUI. Some people live in fzf and want to stay there. So agent-sessions has a `--fzf` flag that skips the React UI entirely, pipes formatted session data to fzf, and resumes whatever you select.
+
+```bash
+agent-sessions --fzf --agent claude
+```
+
+This was a deliberate design choice: don't reimplement fuzzy search when fzf already does it better than I ever will. The tool formats each session as a tab-delimited line with the ID packed into a hidden first field, fzf handles selection, and the same resume logic runs on the output. Unix philosophy — do one thing, compose with other tools.
+
+## What I'd do differently
+
+**Keep: the provider abstraction.** It's the right cut. Five agents, five formats, and the architecture handled each new provider as an afternoon of work, not a rewrite. The Windsurf provider was the last one added and took about 150 lines — most of it just figuring out where Windsurf stores files on macOS versus Linux.
+
+**Keep: React/Ink for the TUI.** I was skeptical, but the component model earned its keep. The session preview pane was added in a single PR because it was just another component with its own state, slotted into the existing layout. Try doing that with raw ANSI escape sequences.
+
+**Change: the content extraction approach.** Right now each provider has its own logic for extracting previews and normalizing content. There's enough duplication that a shared "message extraction pipeline" — take raw content in any shape, produce clean text — would reduce the per-provider surface area. Not a rewrite, just a refactor I keep putting off.
+
+**Change: watch mode.** The tool reads sessions once on startup. If you leave it open and start a new conversation in another terminal, you won't see it until you restart. A file watcher (or even a manual refresh keybinding) would make it feel more alive. It's on the list.
+
+## Where to go from here
+
+If any of this is useful, the whole thing is open source and on npm:
+
+- **Code:** [github.com/vineethkrishnan/agent-sessions](https://github.com/vineethkrishnan/agent-sessions)
+- **Install:** `npm install -g @vineethnkrishnan/agent-sessions`
+
+This is the second post in the series. Next up is one of `diskdoc` or `dockit` — two takes on the same problem (disk cleanup) in two different languages (Rust and Go), which should make for a fun comparison post.
+
+If you're building tooling around AI agents — or if you've reverse-engineered a session format I haven't gotten to yet — I'd love to hear about it. Find me on [GitHub](https://github.com/vineethkrishnan).
