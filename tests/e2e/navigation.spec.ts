@@ -28,7 +28,7 @@ test.describe("Navigation", () => {
   test("clicking nav link scrolls to section", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "Desktop-only test");
 
-    await page.click('.nav-link[href="#projects"]');
+    await page.click('.nav-link[href="/#projects"]');
     await page.waitForTimeout(800);
 
     const section = page.locator("#projects");
@@ -75,7 +75,7 @@ test.describe("Mobile Navigation", () => {
     const menu = page.locator("#mobile-menu");
     await expect(menu).toBeVisible();
 
-    await menu.locator('.mobile-link[href="#about"]').click();
+    await menu.locator('.mobile-link[href="/#about"]').click();
     await expect(menu).not.toBeVisible();
   });
 });
