@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.9](https://github.com/vineethkrishnan/portfolio/compare/v0.0.8...v0.0.9) (2026-04-13)
+
+
+### Documentation
+
+* **blog:** add dfree disk cleanup post ([#14](https://github.com/vineethkrishnan/portfolio/issues/14)) ([ceedc57](https://github.com/vineethkrishnan/portfolio/commit/ceedc57b9e09629c572dccc00c9658ddb6ed0bbb))
+
 ## [0.0.8](https://github.com/vineethkrishnan/portfolio/compare/v0.0.7...v0.0.8) (2026-04-12)
 
 
