@@ -1,0 +1,94 @@
+---
+const certifications = [
+  {
+    name: "Shopware Certified Developer",
+    issuer: "Shopware",
+    issued: "Apr 2022",
+  },
+  {
+    name: "Shopware Certified Template Developer",
+    issuer: "Shopware",
+    issued: "Apr 2022",
+  },
+  {
+    name: "Shopware Certified Developer",
+    issuer: "Shopware",
+    issued: "Sep 2020",
+  },
+];
+---
+
+<div class="section-divider"></div>
+
+<section class="section" id="certifications">
+  <div class="fade-in">
+    <div class="section-label">
+      <span class="section-label-line"></span>
+      <span class="section-label-prefix">~/certifications</span>
+    </div>
+    <h2 class="section-title">Certifications</h2>
+    <p class="section-subtitle">Professional credentials</p>
+  </div>
+
+  <div class="cert-grid">
+    {certifications.map((cert, i) => (
+      <div class={`cert-card card fade-in stagger-${Math.min(i + 1, 5)}`}>
+        <div class="cert-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="7" />
+            <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
+          </svg>
+        </div>
+        <div class="cert-info">
+          <h3 class="cert-name">{cert.name}</h3>
+          <p class="cert-issuer">{cert.issuer}</p>
+          <span class="tag">{cert.issued}</span>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .cert-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .cert-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .cert-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--color-accent-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-accent);
+  }
+
+  .cert-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .cert-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+
+  .cert-issuer {
+    font-size: 0.82rem;
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+</style>

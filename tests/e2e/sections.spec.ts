@@ -98,7 +98,7 @@ test.describe("Homepage Sections", () => {
     const experience = page.locator("#experience");
     await expect(experience).toBeVisible();
 
-    await expect(experience).toContainText("Full Stack Developer");
+    await expect(experience).toContainText("Senior Full-Stack Developer");
     await expect(experience).toContainText("BEO Software");
   });
 
