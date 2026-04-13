@@ -1,0 +1,164 @@
+---
+title: "dfree: stop digging with your hands, you've got an axe now"
+description: "A short story about running out of server space because of academy videos, and the shell tool I wrote so I'd never hear 'Vineeth, we can't upload anymore' again."
+pubDate: 2026-04-13
+tags: ["shell", "cli", "devops", "disk-cleanup", "open-source"]
+draft: false
+---
+
+# dfree: stop digging with your hands, you've got an axe now
+
+There's a special kind of panic that hits when someone pings you at work and says:
+
+> "Vineeth, we can't upload anymore."
+
+Not "something is slow." Not "there's a bug." Just — the server is full. Done. No more room at the inn.
+
+The setup was innocent enough. A small internal hosting for a knowledge base and academy videos. Upload feature included — so the customer support team could add training materials themselves. Worked great. Worked *too* great. Turns out, when you give people an upload button and no quota, they will fill your disk with the enthusiasm of a golden retriever discovering a mud puddle.
+
+So there I was, SSH'd into the server, running `du -sh /*` like a caveman, trying to figure out which directory ate 90% of the disk. Docker images from six months ago? Still there. npm cache from a build pipeline nobody remembers? Thriving. Log files older than some of my git repositories? Absolutely.
+
+I needed a tool. Not a monitoring dashboard. Not an alert system. Just something that could look at a server and say: *"Here's what's eating your disk. Want me to clean it? Yes or no."*
+
+That's **dfree**.
+
+## One command. That's it.
+
+```bash
+dfree
+```
+
+That's the entire interface. Run it, and it scans your system in four passes:
+
+```
+=== System Analysis ===
+
+[INFO] Scanning disk usage...
+500G 387G 113G 78%
+
+[INFO] Scanning Docker usage...
+Images: 12.4GB (8.2GB reclaimable)
+Containers: 1.1GB (900MB reclaimable)
+Build Cache: 5.6GB
+
+[INFO] Scanning Developer Caches...
+  - /home/vineeth/.npm/_cacache: 1240MB
+  - /home/vineeth/.cache/pip: 680MB
+  - /home/vineeth/.cargo/registry/cache: 340MB
+  - /home/vineeth/.gradle/caches: 2100MB
+```
+
+That Gradle cache sitting at 2.1GB and contributing absolutely nothing to society? Yeah. dfree found it.
+
+## It asks before it touches anything
+
+This is the part I care about most. dfree will **never** delete something without asking first. Every single action gets a confirmation:
+
+```
+=== Cleanup Process ===
+
+Prune Docker system (images, containers, networks)? [y/N] y
+[INFO] Pruning Docker...
+Total reclaimed space: 9.1GB
+
+Clean system cache at /var/cache/apt/archives? [y/N] y
+Clean system cache at /var/log/journal? [y/N] n
+Clean developer cache at /home/vineeth/.npm/_cacache? [y/N] y
+Clean developer cache at /home/vineeth/.gradle/caches? [y/N] y
+
+Empty Trash? [y/N] y
+
+[SUCCESS] Cleanup complete.
+```
+
+No flags to memorize. No config files to write. Just a conversation between you and your disk, one directory at a time. Say yes to what you want gone, no to what you don't.
+
+If you're the kind of person who doesn't trust a tool that says "I'll be careful" — good, me neither. That's what `--simulate` is for:
+
+```bash
+dfree --simulate
+```
+
+```
+[WARN] RUNNING IN SIMULATION MODE (No files will be deleted)
+[INFO] SIMULATE: docker system prune -f
+[INFO] SIMULATE: rm -rf /home/vineeth/.npm/_cacache
+[INFO] SIMULATE: rm -rf /home/vineeth/.gradle/caches
+```
+
+All the analysis, none of the consequences. Like window shopping, but for disk space.
+
+## It knows what NOT to delete
+
+Behind every `rm -rf` there's a safety check. dfree maintains a blocklist of paths that should never be touched:
+
+```bash
+# You literally cannot delete these, even if you try
+/ /bin /usr /etc /boot /System /Applications
+```
+
+It also rejects relative paths (no `../../oops`) and checks your exclusion list from `.dfreerc`. Because the only thing worse than a full disk is an empty one that used to have your operating system on it.
+
+## Custom rules for your mess
+
+Every server has its own flavor of clutter. dfree lets you teach it yours with a `~/.dfreerc` file:
+
+```bash
+# ~/.dfreerc
+
+# "Please also look at these"
+DFREE_CUSTOM_PATHS=("/data/academy/temp-uploads" "/var/tmp/build-artifacts")
+
+# "Never touch these, I mean it"
+DFREE_EXCLUDED_PATHS=("/data/academy/production-videos")
+```
+
+The custom paths show up in the analysis and get offered for cleanup. The excluded paths are invisible to the cleaner — dfree won't even ask about them. Because that `/production-videos` directory? That one is sacred. That one stays.
+
+## What it hunts
+
+Here's the full hit list, depending on your OS:
+
+**Docker** — dangling images, stopped containers, orphan networks, build cache. The stuff Docker hoards like it's preparing for winter.
+
+**System caches** — `/var/cache/apt/archives` on Linux, `~/Library/Caches` on macOS. The files your OS downloaded once and will never look at again but refuses to throw away, like a digital hoarder.
+
+**Developer caches** — npm, yarn, pip, cargo, go-build, gradle. Six package managers, six caches, one combined guilt trip. That `node_modules` might be gone, but the cache remembers everything.
+
+**Logs** — journal logs on Linux, `~/Library/Logs` on macOS. Your system's diary, except nobody reads it and it never stops writing.
+
+**Trash** — yes, the actual trash. Because "I'll empty it later" is a lie we all tell ourselves.
+
+## Works everywhere you SSH into
+
+dfree auto-detects whether it's on Linux or macOS and adapts. Different paths for caches, different commands for disk stats, same interactive flow. You don't configure this — it just figures it out.
+
+```bash
+# Linux
+get_system_cache_paths → /var/cache/apt/archives, /var/log/journal, ~/.cache
+
+# macOS
+get_system_cache_paths → ~/Library/Caches, ~/Library/Logs
+```
+
+One tool, two operating systems, zero flags to remember.
+
+## Install in 10 seconds
+
+```bash
+git clone https://github.com/vineethkrishnan/dfree.git
+cd dfree
+./install.sh
+```
+
+That's it. It's a shell script. It doesn't need a runtime, a package manager, or a prayer. If your server has bash, it has dfree.
+
+## The point
+
+dfree isn't clever. It doesn't predict what you should delete. It doesn't auto-schedule. It doesn't send you a weekly report with pie charts.
+
+It does one thing: it walks through your disk, shows you what's taking space, and asks — one item at a time — if you want it gone. That's it. That's the whole tool.
+
+Because when your server is full and someone is waiting to upload the next training video, you don't need a dashboard. You need an axe.
+
+**Code:** [github.com/vineethkrishnan/dfree](https://github.com/vineethkrishnan/dfree)
