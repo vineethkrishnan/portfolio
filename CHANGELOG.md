@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.10](https://github.com/vineethkrishnan/portfolio/compare/v0.0.9...v0.0.10) (2026-04-13)
+
+
+### Features
+
+* **experience:** add full work history, certifications, and fix nav links ([#16](https://github.com/vineethkrishnan/portfolio/issues/16)) ([3d687f3](https://github.com/vineethkrishnan/portfolio/commit/3d687f35150f87a317fbb1de4d16be083c7bb09a))
+
 ## [0.0.9](https://github.com/vineethkrishnan/portfolio/compare/v0.0.8...v0.0.9) (2026-04-13)
 
 
