@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.12](https://github.com/vineethkrishnan/portfolio/compare/v0.0.11...v0.0.12) (2026-04-14)
+
+
+### Documentation
+
+* **blog:** add .zshrc archaeology blog post ([#20](https://github.com/vineethkrishnan/portfolio/issues/20)) ([0fbce19](https://github.com/vineethkrishnan/portfolio/commit/0fbce193e675ead24f62a49878f9ee1457f247c5))
+
 ## [0.0.11](https://github.com/vineethkrishnan/portfolio/compare/v0.0.10...v0.0.11) (2026-04-14)
 
 
