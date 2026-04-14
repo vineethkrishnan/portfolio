@@ -1,0 +1,72 @@
+---
+title: "jquery.verticalScroll.js: a love letter to jQuery, written ten years later"
+description: "I saw Apple's iPhone page in 2016, thought 'I can build that in jQuery,' and somehow I'm still maintaining it in 2026. Zero stars. Zero regrets."
+pubDate: 2026-04-14
+tags: ["jquery", "plugin", "javascript", "scss", "open-source", "journey"]
+draft: false
+---
+
+# jquery.verticalScroll.js: a love letter to jQuery, written ten years later
+
+There's a moment every developer has had. You're browsing a website — usually Apple's — and something scrolls so smoothly that your brain short-circuits from "wow, that's beautiful" to "I bet I could build that" in under three seconds.
+
+For me, it was Apple's iPhone launch page. Full-screen sections. Buttery vertical scroll. Pagination dots on the side like a quiet tour guide. I stared at it the way a dog stares at a squirrel.
+
+And then I did what any reasonable developer would do in 2016: I opened a file, typed `$.fn.verticalScroll = function()`, and started building a jQuery plugin.
+
+Ten years later, I'm still maintaining it. It has 13 pagination themes, 16 animations, TypeScript support, visual regression tests, and a documentation site. It also has zero GitHub stars. Not one. Not even from me.
+
+This is the story of a plugin that nobody asked for, nobody uses, and I absolutely refuse to let die.
+
+## The project I can't remember building it for
+
+Here's the thing about personal projects from a decade ago: I genuinely cannot tell you what I originally built this for. I don't even remember what I had for breakfast. What I *do* remember is the feeling — I wanted full-page vertical scrolling in my next project, fullpage.js existed but I wanted my own, and jQuery was the hammer that fit every nail in 2016.
+
+So I built it. A lightweight plugin — pass it a container with `<section>` elements, call `.verticalScroll()`, and suddenly your page moves like an Apple keynote. Mouse wheel, keyboard arrows, touch swipe. Pagination dots that actually knew which section you were on.
+
+It worked. I used it. I loved it. And then I had the thought that turns a weekend hack into a ten-year commitment:
+
+*"This should be open source."*
+
+## Zero stars, zero promotion, zero shame
+
+Let's talk about the elephant in the repo: **zero GitHub stars.**
+
+Ten years. Not a single star. And I've never once been tempted to log into an alt account and give myself one. My philosophy is simple — if someone actually likes it, they'll speak out. Spread the word, don't manufacture it.
+
+Is it a little absurd to maintain a jQuery plugin for a decade with zero external validation? Absolutely. But there's something honest about it. This project doesn't exist to pad a resume or farm engagement. It exists because I built something, I liked it, and I wasn't ready to let it rot.
+
+Some developers have side projects with thousands of stars that they abandoned two months after launch. I have one with zero stars that I gave a TypeScript rewrite last week. I know which one I respect more.
+
+## Dressing a ten-year-old in a tuxedo
+
+The original code was... let's say "young." If the first version was a newborn — tiny, adorable, running around naked and somehow still getting the job done — then what I've done over the years is slowly teach it table manners and put it in a suit.
+
+The latest version? It's wearing a tuxedo:
+
+- **13 pagination themes** — Neon, Git Graph, Chain, Diamond, and nine others. Each one with a custom animation that matches. Because if you're going to have pagination dots, they should at least have *personality*.
+- **SCSS 7-1 architecture** — because managing 13 themes in a single CSS file is a war crime.
+- **Playwright visual regression tests** — every theme, every animation, pixel-checked. Because the one thing worse than a jQuery plugin nobody uses is a *broken* jQuery plugin nobody uses.
+- **Docsify documentation site** — full API docs, examples, theme previews.
+- **Release-please automation** — semantic versioning, changelogs, the works.
+- **v3 alpha: TypeScript + ESM** — yes, a jQuery plugin with TypeScript types and ES module support. In 2026. I know how that sounds.
+
+Is it overengineered for what it is? Probably. But here's the thing — I didn't add all of this at once. Each upgrade came from a genuine desire to do the thing *properly*. If I'm going to maintain something for a decade, it might as well be something I'm proud to open the source of.
+
+## Will this ever be anything other than a jQuery plugin?
+
+Honestly? The odds that `jquery.verticalScroll.js` becomes `react-vertical-scroll` or `@vue/vertical-scroll` are roughly the same as the odds that it gets its first GitHub star: nonzero, but I'm not holding my breath.
+
+The v3 TypeScript rewrite was a modernization experiment. A "what if" exercise. Could the core logic live outside jQuery? Could it become framework-agnostic? The answer is yes, technically. But "technically possible" and "something I'll actually do" are two very different things in the side-project economy.
+
+More likely, this plugin will get another quiet upgrade in 2036. jQuery 5 will exist by then (probably). I'll add Web Component support or something. The star count will still be zero. And I'll still be fine with that.
+
+## The point
+
+Every developer has a project like this. The one that doesn't make your portfolio shine. The one that nobody clones. The one that exists purely because *you* wanted it to exist, and you kept choosing to make it a little better instead of letting it decay.
+
+`jquery.verticalScroll.js` is mine. Born because Apple made a pretty website and I had jQuery loaded. Raised through a decade of quiet commits. Dressed up in TypeScript because even old code deserves new clothes.
+
+If you somehow find it, try it, and it saves you twenty minutes — that would genuinely make my day. And if you star it? Well. That would be a first.
+
+**Code:** [github.com/vineethkrishnan/jquery.verticalScroll.js](https://github.com/vineethkrishnan/jquery.verticalScroll.js)
