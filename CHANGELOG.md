@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.11](https://github.com/vineethkrishnan/portfolio/compare/v0.0.10...v0.0.11) (2026-04-14)
+
+
+### Documentation
+
+* **blog:** add jquery.verticalScroll.js blog post ([#18](https://github.com/vineethkrishnan/portfolio/issues/18)) ([0380855](https://github.com/vineethkrishnan/portfolio/commit/03808552123c90d8a102ec04035ae8339ac3f810))
+
 ## [0.0.10](https://github.com/vineethkrishnan/portfolio/compare/v0.0.9...v0.0.10) (2026-04-13)
 
 
