@@ -1,0 +1,215 @@
+---
+title: "My .zshrc is 350 lines and I mass-replaced every core Unix command"
+description: "A 350-line .zshrc, a 68-line .bash_aliases time capsule from the Linux era, a secret gist, and the story of a developer who can't let go of a shell config."
+pubDate: 2026-04-14
+tags: ["shell", "zsh", "dotfiles", "devtools", "personal", "journey"]
+draft: false
+---
+
+# My .zshrc is 350 lines and I mass-replaced every core Unix command
+
+Every developer has a dirty secret. Mine lives in two files.
+
+`.zshrc` — 350 lines. Organized, sectioned, commented like production code. The refined version. The tuxedo.
+
+`.bash_aliases` — 68 lines. No sections. No comments. A hardcoded password on line 48. A meeting reminder with a typo I never fixed. The digital equivalent of a shoebox full of receipts from 2016.
+
+Together, they are over 400 lines of shell configuration that I have carried — like a suitcase I refuse to unpack — across operating systems, machines, jobs, and an entire decade of my career.
+
+This is the archaeology of my dotfiles.
+
+## The secret gist
+
+Before we dig in, let me explain the preservation method.
+
+Years ago, I was about to move to a new machine. The thought of leaving my config behind felt like abandoning a pet at a rest stop. Physical devices are a burden to carry around. Hard drives fail. Laptops get replaced. But a GitHub gist? A gist is forever.
+
+So I created a secret gist. Pasted in my `.bashrc`, my `.bash_aliases`, and a handful of other snippets I'd collected — the kind of things a developer hoards "just in case." That gist is still there. Still secret. Still the first thing I pull on any new machine, before I even open a code editor.
+
+New machine ritual:
+1. Install the OS
+2. Pull the gist
+3. *Then* start working
+
+Everything else is replaceable. The config is not.
+
+## The bash_aliases: a time capsule you can source
+
+Here's the thing about my `.bash_aliases` file — it still gets loaded. Every single time I open a terminal in 2026, this line runs:
+
+```bash
+[ -f ~/.bash_aliases ] && source ~/.bash_aliases
+```
+
+That line has survived the migration from bash to zsh, from Linux to macOS, from PHP to TypeScript. It's the most resilient piece of code I've ever written, and it's not even code — it's a conditional file include.
+
+And what does it load? Sixty-eight lines of a Linux PHP developer's entire worldview, frozen in amber.
+
+### The aliases that tell my whole career story
+
+```bash
+alias html="cd /var/www/html/"
+```
+
+If you know, you know. This is the alias of someone who typed `cd /var/www/html/` forty times a day and finally snapped. Classic LAMP stack energy. I haven't had a `/var/www/html/` directory in years, but the alias stays. It's heritage.
+
+```bash
+alias art="php artisan"
+```
+
+The Laravel era. Two characters instead of eleven. At my peak, I was running `art migrate`, `art serve`, `art make:controller` so often that `php artisan` felt like typing a formal letter when a text would do.
+
+```bash
+alias pst="sh ~/PhpStorm-172.3198.4/bin/phpstorm.sh"
+```
+
+This one sends me. I was launching PhpStorm from a *shell script* with a *hardcoded version path*. Not from a desktop shortcut. Not from a `/usr/local/bin` symlink. From `~/PhpStorm-172.3198.4/bin/phpstorm.sh`. Like a gentleman.
+
+```bash
+alias screenup="xrandr --output eDP1 --rotate inverted"
+alias screendown="xrandr --output eDP1 --rotate normal"
+```
+
+I had a Linux laptop where I needed to flip the screen. I don't remember why. I don't want to remember why. But I aliased it, because apparently I was doing it often enough to justify two entries.
+
+```bash
+alias open="xdg-open"
+```
+
+This is a Linux developer making their terminal feel like macOS. On Linux, `open` doesn't exist — you need `xdg-open`. So I aliased it. Years later, I moved to macOS where `open` actually works natively. The alias became unnecessary. It stayed anyway.
+
+### The ones I probably shouldn't show you
+
+```bash
+alias sql_mode="echo '********' | sudo -S ~/./set-sql-mode.sh"
+alias stop_server="echo '********' | sudo -S ~/./stop_server.sh"
+alias start_server="echo '********' | sudo -S ~/./start_server.sh"
+```
+
+Yes. That's a plaintext password. In a shell alias. Piped into `sudo`. I was young. I was reckless. I was tired of typing my password three times to restart Apache. Don't do this. I did this. We've all done this.
+
+### The typo that will outlive me
+
+```bash
+alias weekly='notify-send -t 5000 --icon=clock "Knock Kncok" "Agency weekly is about to start"'
+```
+
+"Knock Kncok." Not "Knock Knock." *Kncok.* This alias sent me a desktop notification before my weekly agency meeting, and for however long I used it, it greeted me with a typo. I never fixed it. It's still there. It will remain there until the heat death of the universe or until GitHub deletes my gist, whichever comes first.
+
+### The Shopware chapter
+
+A solid chunk of the file is Shopware plugin development aliases:
+
+```bash
+alias bcl="bin/console cache:clear"
+alias pcr="bin/console plugin:create"
+alias pin="bin/console plugin:install --reinstall -c --activate"
+alias pact="bin/console plugin:activate -c"
+alias pli="bin/console plugin:list"
+```
+
+Ten aliases for one framework's CLI. That's not configuration, that's muscle memory committed to disk.
+
+## The .zshrc: the evolved form
+
+If `.bash_aliases` is the archaeological dig, `.zshrc` is the modern city built on top of it. Three hundred and fifty lines. Organized into sections with dividers. Comments that explain things. The version of my config that I wouldn't be embarrassed to show in a blog post. So here we are.
+
+### I replaced every core command
+
+At some point, I decided that the standard Unix tools weren't good enough. So I replaced them. All of them.
+
+```bash
+alias cat='bat --paging=never'
+alias grep='rg'
+alias find='fd'
+alias cd='z'
+alias ls='eza --icons --group-directories-first'
+```
+
+`cat` is now `bat`. `grep` is now `ripgrep`. `find` is now `fd`. `cd` is now `zoxide`. `ls` is now `eza` with icons and git status.
+
+I have effectively replaced the core Unix experience. If you SSH'd into my machine and tried to use it, nothing would behave the way you expect. `cat` has syntax highlighting. `ls` has icons. `cd` remembers where you've been. It's not a terminal anymore — it's *my* terminal.
+
+### The fzf setup that took longer than some of my projects
+
+```bash
+export FZF_DEFAULT_OPTS='
+  --height 40%
+  --layout=reverse
+  --border rounded
+  --preview "bat --style=numbers --color=always --line-range=:200 {}"
+  --color=bg+:#1a1b26,bg:#12131b,spinner:#8a96fd,hl:#f7768e
+  --color=fg:#d5dbe8,header:#66ccf0,info:#e0c07b,pointer:#8a96fd
+  --color=marker:#66da8e,fg+:#d5dbe8,prompt:#8a96fd,hl+:#f7768e
+'
+```
+
+That's a custom color scheme. For a fuzzy finder. I color-matched my file search tool to my terminal theme. This is what happens when a developer has opinions about aesthetics and access to hex codes.
+
+But the real power is in the functions built on top of it:
+
+```bash
+# Search file contents, preview with syntax highlighting, open in editor
+function fzg() {
+  local file line
+  read -r file line <<< "$(rg --line-number --no-heading "$@" | \
+    fzf -d ':' --preview 'bat --style=numbers --color=always \
+    --highlight-line {2} {1}' | awk -F: '{print $1, $2}')"
+  [[ -n "$file" ]] && ${EDITOR:-vim} "+$line" "$file"
+}
+```
+
+Type `fzg "TODO"`, and it ripgreps your entire project, shows results in a fuzzy finder with a syntax-highlighted preview pane, and opens the file at the exact line in your editor. Three tools chained together into one command. This is the kind of thing that makes you feel like a wizard the first time it works and completely unemployable on anyone else's machine.
+
+### The extract function everyone has
+
+```bash
+function extract() {
+  if [ -f "$1" ]; then
+    case "$1" in
+      *.tar.bz2)   tar xjf "$1"     ;;
+      *.tar.gz)    tar xzf "$1"     ;;
+      *.zip)       unzip "$1"       ;;
+      *.7z)        7z x "$1"        ;;
+      # ... six more formats
+    esac
+  fi
+}
+```
+
+I am convinced that every developer who has maintained a dotfile for more than two years has a version of this function. Nobody memorizes tar flags. Nobody ever will. We all just write this function once and carry it forever.
+
+### The little things that add up
+
+```bash
+alias weather='curl -s "wttr.in?format=3"'
+alias myip='echo "Local: $(ipconfig getifaddr en0)" && echo "Public: $(curl -s ifconfig.me)"'
+alias killport='function _killport(){ lsof -ti:$1 | xargs kill -9; }; _killport'
+alias duh='du -sh * | sort -rh | head -20'
+```
+
+Weather in the terminal. IP address in one command. Kill whatever's hogging a port. See what's eating disk space. None of these are impressive on their own. Together, they're the reason I can't use anyone else's terminal without getting frustrated.
+
+## The line that bridges two eras
+
+If I had to pick one line that captures this entire story, it's this:
+
+```bash
+[ -f ~/.bash_aliases ] && source ~/.bash_aliases
+```
+
+A zsh config file, on a MacBook, in 2026, loading a bash aliases file that contains `cd /var/www/html/` and a hardcoded password from a Linux machine that no longer exists.
+
+That's not configuration. That's identity.
+
+## The point
+
+I've been a developer since 2012. I've changed languages, frameworks, operating systems, editors, jobs, and countries. Through all of it, the one constant has been a shell config that grew with me — from a handful of PHP shortcuts on a Linux laptop to a 350-line productivity setup on a MacBook.
+
+Is it excessive? Probably. Is every line necessary? Definitely not. Could I start fresh with a clean `.zshrc`? Technically.
+
+But I won't. Because every alias is a bookmark in my career. `art` is the Laravel years. `html` is the LAMP stack era. `pst` is the kid who launched his IDE from a shell script. And somewhere in a secret gist, there's a meeting reminder that still says "Knock Kncok."
+
+I wouldn't change a character.
+
+**Dotfiles:** Some things are too personal to share. This was one of them. Until now.
