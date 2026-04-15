@@ -1,0 +1,153 @@
+---
+title: "My family thinks WhatsApp can send anything. So I wrote a Python CLI."
+description: "A 2005 wedding video, an 8 GB .VOB file, a family WhatsApp group with unreasonable faith, a small privacy grudge against Google, and the weekend Python CLI that came out of it."
+pubDate: 2026-04-15
+tags: ["python", "ffmpeg", "cli", "media", "open-source", "journey"]
+draft: false
+---
+
+# My family thinks WhatsApp can send anything. So I wrote a Python CLI.
+
+![An overwhelmed developer in a grey hoodie at a laptop, three giant dark disc-shaped boulders floating menacingly above him, representing three DVD files bearing down.](/blog/medix-hero.png)
+
+## The weekend plot twist
+
+It was a normal weekend. My older cousin was visiting. Lunch was done, tea was going, the mood was relaxed. I had one of those rare afternoons where nobody was asking me to "just fix one small thing" on their laptop.
+
+And then someone in the room brought up the wedding video.
+
+Not mine. My cousin's wedding. From **2005**. Ripped from a DVD years ago. Sitting on some old hard drive I kept because apparently I am the family digital archivist now — a role I never applied for.
+
+Another cousin was suddenly excited.
+
+> **Cousin:** Hey, can you send that wedding video to the family group?
+> **Me:** You mean the full video?
+> **Cousin:** Yeah yeah, everyone wants to see it. Nostalgia and all.
+
+Innocent enough. Family group, nostalgia, share the video. Five-minute task. Except.
+
+## The .VOB situation
+
+The file was in **.VOB format**. Three parts. Each one around 2 to 3 GB. Total: roughly 8 GB of early 2000s DVD goodness.
+
+If you are under thirty, `.VOB` might not mean much to you. It is the container format DVD players used, back when DVDs were a thing people rented from shops. Old, not streaming friendly, and most modern phones look at it the same way your cat looks at a cucumber.
+
+![A confused cartoon smartphone with wide eyes standing next to a mysterious chained scroll covered in cryptic film reel symbols, representing a modern phone trying to open a .VOB file.](/blog/medix-vob.png)
+
+Modern phone stock video player meets a 2005 `.VOB` file:
+
+> **Stock Video Player:** Sorry, this file format is not supported.
+> **Me:** Of course it is not.
+
+So step one was already impossible. Even if WhatsApp somehow let me upload 8 GB, nobody in the family would be able to play the thing on their phone anyway. WhatsApp also has a file size limit that is not 8 GB. It is not even close to 8 GB. You can google the exact number, but the point is — my 2005 wedding archive was not going through it.
+
+## Family tech support mode
+
+My family group is the classic Indian family group. Some very young, some very old, most somewhere in the middle. The group has a very specific worldview which I will call **WhatsApp University syndrome**: whatever it is, someone will try to send it through WhatsApp.
+
+- A 40-page PDF? Send it in the group.
+- A 20 MB meme image? Group.
+- A video of the dog? Group.
+- An 8 GB three-part DVD rip from 2005? *Also group.*
+
+Sending files to my family through WhatsApp is never a technical question. It is a **faith** question. They believe WhatsApp will handle it, the way previous generations believed the postman would definitely find the house just from a vague description like "opposite the old banyan tree, near the temple."
+
+So when I said "the video is too big and in the wrong format, we can't send it through WhatsApp," what they actually heard was "I have personally failed the family."
+
+Cousin offered the backup plan.
+
+> **Cousin:** Then just upload it to Google Drive no?
+> **Me:** Uhh.
+
+## Why I did not just use Google Drive
+
+Look. Technically, Google Drive would have solved this. Upload the file, share the link, anyone in the family opens the link, Drive plays the video in the browser. Done. Move on.
+
+But there is a small, very personal thing I have with giving Google one more file about my family. Google already knows an uncomfortable amount about me. My location history. My search history. My email. My calendar. My photos. Probably my blood type.
+
+![A giant cartoon eyeball with a wide smile holding a wooden filing cabinet stuffed with papers while a tiny nervous developer clutches one of his own files next to it.](/blog/medix-google.png)
+
+At this point I am pretty sure **Google knows me better than my own wife**. My wife does not remember every restaurant I have been to in the last six years. Google does. And now I was supposed to hand it a private 8 GB wedding video of a 2005 family event?
+
+No thanks. This is a small thing, but it is my small thing.
+
+There is also a purely technical annoyance on top of the privacy one. If I had used some online media conversion service, I would have had to:
+
+1. Upload 8 GB to someone's server
+2. Wait for their queue
+3. Wait for the conversion
+4. Download the converted file
+5. *Then* upload it to Drive or wherever
+
+That is a lot of babysitting for one video. And every step in that list is another server I do not control touching a private family file.
+
+Then I looked at my laptop. And my laptop had something those online services did not know about me: **it already had ffmpeg**.
+
+## Wait. I can just do this myself.
+
+Here is the moment this post becomes a project.
+
+I have a unix system. I have `ffmpeg`. I can install any package I need. I can convert any media format into any other format right here in my terminal, without uploading my cousin's wedding video to a single outside server. The compute is free. The storage is mine. The privacy is obvious.
+
+The only problem was: writing
+
+```bash
+ffmpeg -i input.VOB -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k output.mp4
+```
+
+once is fine. Writing it three times for three parts is fine. But I do this kind of thing often enough — family members handing me random files in random formats — that I knew I wanted something slightly nicer than "remember the exact ffmpeg flags forever."
+
+So over that same weekend, I started writing **medix**.
+
+## What medix actually is
+
+Medix is a small Python CLI that wraps ffmpeg in a friendlier interface. The name came from "**Media to X**" — you give it a media file, you pick X, it gives you X. Short, cli-friendly, does not sound generic like `mediaconverter` or `mcc`. MediaX → medix.
+
+The stack is honestly boring, which is the point:
+
+- **Python 3.9+** — ffmpeg as a subprocess is trivial in Python, Python already ships on macOS and most Linux distros, and I already know the language. No runtime to install for most users.
+- **[click](https://click.palletsprojects.com)** for the CLI plumbing — small, reliable, has been around forever.
+- **[rich](https://rich.readthedocs.io)** for the terminal UI — tables, colours, actual progress bars that do not lie.
+- **[questionary](https://questionary.readthedocs.io)** for the interactive prompts — after you give it a path, it asks you which format, which codec, which preset, which resolution, all with keyboard arrows.
+- **ffmpeg** for the actual conversion. Medix is a polite interface; ffmpeg does all the real work.
+
+A few things I am quietly proud of:
+
+- **Auto-install prerequisites.** If you do not have ffmpeg, medix detects your operating system, finds the right package manager (Homebrew, APT, DNF, Pacman, winget, Chocolatey, Scoop, and a few more) and offers to install it for you. You do not need to know what `apt-get install ffmpeg` is.
+- **Batch mode.** Point it at a folder, optionally add `-r` for recursive, and it converts every media file in it.
+- **File discovery.** Before doing anything, it scans your path and shows you a clean table of what it found — resolution, duration, size — so you know exactly what is about to happen. You can bail with Ctrl-C if you scanned the wrong folder.
+- **Real progress bars.** Not fake ones that jump from 0 to 99 and freeze. It reads ffmpeg's progress output and updates per file and overall.
+- **`--dry-run` flag.** Because sometimes you just want to see what it *would* do without actually running ffmpeg on 8 GB of your cousin's wedding.
+
+You install it with `pip install medix`, and it is on PyPI at [pypi.org/project/medix](https://pypi.org/project/medix/). Source at [github.com/vineethkrishnan/medix](https://github.com/vineethkrishnan/medix).
+
+## The quiet victory
+
+The 2005 wedding video converted in about 15 minutes. Three parts, all merged into one clean MP4. The file size dropped enough to share comfortably. I uploaded the result, sent it in the family group, and then I just watched.
+
+![A warm, cosy scene of an Indian family huddled together around a glowing phone, smiling and laughing as they watch a nostalgic video.](/blog/medix-family.png)
+
+Within minutes the group was lighting up. Elderly aunts were sending voice notes saying "oh look at so-and-so, they were so young then." Uncles were zooming in on their own faces from twenty years ago. My cousin — the actual groom — sent three laughing-crying emojis in a row, which is the closest he gets to a standing ovation.
+
+Nobody in that group knew what medix was. Nobody knew I had written a Python CLI over the weekend just to make this share possible. Nobody asked what format the file was in, or which package manager installed ffmpeg, or whether I ran it in batch mode. As far as they were concerned, I had sent a video to the group. That was the full extent of the technical appreciation.
+
+And honestly? That was the best part.
+
+When a tool you built disappears completely into the thing it was supposed to do, it means the tool worked.
+
+## Try it yourself
+
+```bash
+pip install medix
+medix ./some-old-video.vob
+```
+
+Or point it at a whole folder:
+
+```bash
+medix ./wedding-dvd-rip -r
+```
+
+That is the whole setup. The repo is at [github.com/vineethkrishnan/medix](https://github.com/vineethkrishnan/medix) if you want to read the code, open issues, or suggest features. I do accept contributions on this one — unlike a certain Laravel 4 starter kit of mine from another era, which is probably the next blog post.
+
+And if anyone in your family ever hands you an 8 GB .VOB file and asks you to "just send it in the group" — now at least you have a weekend project.
