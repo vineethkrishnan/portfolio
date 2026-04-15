@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.13](https://github.com/vineethkrishnan/portfolio/compare/v0.0.12...v0.0.13) (2026-04-15)
+
+
+### Documentation
+
+* **blog:** add ipwhoami story post ([#22](https://github.com/vineethkrishnan/portfolio/issues/22)) ([d9df21e](https://github.com/vineethkrishnan/portfolio/commit/d9df21e0de2b1c467d4da67a31dfff2afd28d7de))
+
 ## [0.0.12](https://github.com/vineethkrishnan/portfolio/compare/v0.0.11...v0.0.12) (2026-04-14)
 
 
