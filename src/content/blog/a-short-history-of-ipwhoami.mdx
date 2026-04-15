@@ -1,0 +1,111 @@
+---
+title: "A short history of the CLI I built to stop curling IP APIs"
+description: "It was supposed to be a weekend CLI. Then the name got stolen, the providers started disagreeing with each other, the rate limits hit back, and somewhere along the way the simple tool grew its own self-hosted backend."
+pubDate: 2026-04-15
+tags: ["cli", "node", "ip", "geolocation", "open-source", "journey"]
+draft: false
+---
+
+# A short history of the CLI I built to stop curling IP APIs
+
+![A tired developer in a green sweater at a laptop, a smug red cartoon dragon perched on his shoulder guarding a brown package box on the desk, editorial illustration style.](/blog/ipwhoami-hero.png)
+
+## The rhythm
+
+Let me start with the rhythm, because that is really where this tool came from.
+
+If you have ever worked on anything involving IPs — abuse reports, rate limiting, geoblocking, suspicious login alerts, whatever — you know the loop. A ticket comes in. Something from `203.0.113.42`. You open a terminal and type the thing you have typed a hundred times already:
+
+```bash
+curl -H "Authorization: Bearer $IPINFO_TOKEN" https://ipinfo.io/203.0.113.42 | jq
+```
+
+Read the JSON. Copy the city. Paste it into the ticket. Close the terminal.
+
+Then it is `198.51.100.7`. Up arrow, edit, re-run. Then a whole range you need to cross-check, so you switch to another provider because `ipinfo.io` is already throttling you, and you remember `ipapi.co` had better ASN info. Different endpoint. Different JSON shape. Different `jq` command. Squint, copy, paste.
+
+By end of day you have not really done much, but you also have not stopped doing this one thing.
+
+The funny part is you don't even realise it is friction. First time, tenth time, fiftieth time — it just feels like how the job works. You get used to it. Every developer has this one small thing they keep putting up with, because fixing it feels like more work than doing it one more time.
+
+And then one afternoon, somewhere around the fortieth `curl -H`, a thought hit me:
+
+*What if I could just type `ipwho 8.8.8.8`?*
+
+## The npm namespace heist
+
+The next morning I opened a new directory and started writing it. It was going to be small. A tiny CLI, no backend, no frills. I wrote a rough first version in maybe an hour — take an IP as argument, hit ipinfo, print the result. If no argument, look up my own public IP first and use that.
+
+Then I went to npm to claim the name.
+
+`ipwho` was taken.
+
+Of course it was. It is a short, pronounceable, obviously useful package name. Someone had grabbed it a long time ago for a project that was no longer active. Standard npm story.
+
+I sat with it for a minute. I could have gone with `ipwho-cli`, or `vkr-ipwho`, or `whois-lite`. All of them felt like I was giving up. None of them matched what I actually wanted to type.
+
+Then I thought: what if the CLI is called `ipwhoami`? You run it with no argument, it tells you who *you* are — your own public IP and details. You run it with an IP, it tells you who *that* is. The extra three letters actually match the behaviour better than `ipwho` ever would have.
+
+I was not going to admit this at the time, because I was still annoyed about the squatter. But honestly the compromise was a better name. Unix already trained every developer to read `whoami` as "tell me about myself", and now the tool was doing exactly that, for a different value of "self".
+
+npm let me have `ipwhoami`. I published it. Moving on.
+
+## Node, zero dependencies, because why not
+
+People sometimes ask why the stack is so boring. Node, vanilla JS, no TypeScript, no framework. The honest answer is the problem did not need anything else.
+
+Node 18 ships with `fetch` in the standard library, which is the only thing a CLI like this actually needs. The argument parser is a `switch` block. The provider adapters are small files that hit a URL and shape the response into a common format. There is no build step. No bundler. You clone the repo, you run `node bin/ipwhoami.js`, and it just works.
+
+I will not pretend this was a principled stance against dependencies. Every package I considered would have cost me more to wire up than the thing it replaced. When zero dependencies is actually possible, why pick two?
+
+The whole CLI, including the three provider adapters, is around 500 lines.
+
+## Providers disagree about reality
+
+Here is the thing I did not expect.
+
+I added a second provider just because one was not enough. Sometimes `ipinfo.io` was rate limiting me, sometimes I wanted a second opinion. Then I added a third. Same IP going through three different APIs.
+
+And the results were different.
+
+Not wildly different, but different enough to matter. One provider would say an IP was in Mumbai, another would say Bangalore, a third would say "India" and not commit to a city at all. ASN names would be spelled differently. Timezones would sometimes be off. Organisation fields would sometimes show the parent company, sometimes the subsidiary.
+
+I thought it was a bug in my code at first. It was not. IP geolocation is a *best-effort guess* to begin with. Every provider runs its own heuristics on top of partially overlapping datasets. There is no single source of truth for which city an IP belongs to, because there isn't one city that owns an IP in the first place.
+
+So I added a compare mode:
+
+```bash
+$ ipwhoami -c 8.8.8.8
+```
+
+It runs the same IP through every provider and prints the results side by side. You get to see where they agree and where they don't, and then you pick the one that matches what you need. I did not plan this as a feature. I just wanted to see the disagreement with my own eyes. Then I kept using it.
+
+## The rate limit wall
+
+Free tier IP APIs are generous until they are not. You hit some threshold — sometimes requests per minute, sometimes requests per day — and suddenly every call comes back with 429 or a "please upgrade your plan" message. For a CLI that is supposed to be a one-liner, that is a problem. I was already debugging something else. I did not want to debug my debugging tool.
+
+Caching helped a little. It did not fix the real issue. The first time you look up an IP, you are still on the network, still at the mercy of someone else's rate limiter.
+
+The real fix was the obvious one once I looked at it directly: just host the data myself.
+
+## The day the CLI grew a backend
+
+There are free IP geolocation databases out there. [DB-IP](https://db-ip.com/db/lite.php) publishes a Lite edition every month under CC BY 4.0 — no account, no API key, just a `.mmdb` file you download. It is the same binary format MaxMind uses, so you can read it with the `maxmind` npm package in microseconds.
+
+So I built a small backend service and put it in the same repo, under `api/`. It is a tiny [Hono](https://hono.dev) server that loads the DB-IP Lite city and ASN databases at startup and exposes the same response shape the CLI already expected. There is a basic rate limiter in front and a Dockerfile for deployment. Maybe a hundred and fifty lines total.
+
+Right now the backend lives next to the CLI as a separate piece. You can deploy it on a small VPS or any container host, and your IP lookups never touch a third-party again. Wiring the CLI to point at your own backend as a fourth provider is the next step, and that is what the next release is about.
+
+This was the part I did not see coming when I started. A tool I built to save thirty seconds per ticket grew its own self-hosted backend because the third-party providers kept getting in the way. That happens with small tools more often than I expected. You start by abstracting over something, and slowly you end up owning the whole thing.
+
+## Love surprises
+
+If I had to sum up what I learned building this, it is this: keep the stack small enough to defend.
+
+Surprises will come. Someone will report an IPv6 case I did not handle. A provider will quietly change their JSON shape. Someone will open an issue that turns out to be a pasted API key with a trailing newline. None of these scare me because the stack is small enough to fix in an afternoon. Zero dependencies on the CLI side. Plain Node. A tiny Hono service next to it. A DB-IP file. If the whole thing broke tomorrow, I could rebuild every layer before dinner.
+
+I actually love the surprises. Not because they are fun — they are usually not — but because they are the moments where your assumption and the real world disagree, and that is pretty much the whole job. The smaller your stack, the faster you get to the disagreement.
+
+`ipwhoami` started as "I am tired of typing `curl -H`". It ended up with its own geolocation backend because the third-party providers kept getting in the way. That is pretty much the whole story.
+
+The repo is at [github.com/vineethkrishnan/ipwhoami](https://github.com/vineethkrishnan/ipwhoami). Docs at [ipwhoami-docs.vineethnk.in](https://ipwhoami-docs.vineethnk.in). Install it with `npm i -g ipwhoami` or `brew tap vineethkrishnan/ipwhoami && brew install ipwhoami`. If you hit a surprise, open an issue — I like surprises.
