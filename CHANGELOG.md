@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.14](https://github.com/vineethkrishnan/portfolio/compare/v0.0.13...v0.0.14) (2026-04-15)
+
+
+### Documentation
+
+* **blog:** add medix story post ([#24](https://github.com/vineethkrishnan/portfolio/issues/24)) ([60f3396](https://github.com/vineethkrishnan/portfolio/commit/60f3396a8b3f54eab38b2c015b408c0a32996331))
+
 ## [0.0.13](https://github.com/vineethkrishnan/portfolio/compare/v0.0.12...v0.0.13) (2026-04-15)
 
 
