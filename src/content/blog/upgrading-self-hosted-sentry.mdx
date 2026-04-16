@@ -1,0 +1,197 @@
+---
+title: "I upgraded our 2.5-year-old self-hosted Sentry without losing a single byte"
+description: "A self-hosted Sentry instance, 2.5 years behind, 0 bytes of swap free, 4 mandatory version hops, 78 containers, and one afternoon where I learned that enabling a feature and using a feature are not the same thing."
+pubDate: 2026-04-16
+tags: ["sentry", "self-hosted", "devops", "upgrade", "docker", "journey"]
+draft: false
+---
+
+# I upgraded our 2.5-year-old self-hosted Sentry without losing a single byte
+
+![A developer in a black t-shirt at a home office standing desk, MacBook Air connected to a large external monitor showing terminal logs, editorial illustration style.](/blog/sentry-upgrade-hero.png)
+
+## The server nobody touched
+
+Every team has one. A server that works. A server that has been working for so long that everyone has collectively agreed to never look at it directly, the way you never look directly at the sun, or at the production database during a demo.
+
+Ours was the Sentry box.
+
+Self-hosted Sentry, version 23.9.1, installed in October 2023 on a Hetzner machine running Ubuntu 20.04. It collected errors from six applications — three TypeScript backends, a React frontend, a PHP monolith, and one project cryptically named "internal" that I am not going to explain.
+
+It worked. It had been working. Nobody was going to touch it.
+
+Then I touched it.
+
+## The crime scene
+
+Before you upgrade anything on a production server, you check `free -h`. This is a tradition. It is also, in this case, a jump scare.
+
+```
+              total        used        free      shared  buff/cache   available
+Mem:           30Gi        26Gi       454Mi       349Mi       3.5Gi       3.1Gi
+Swap:           9Gi         9Gi         0Ki
+```
+
+Zero. Zero bytes of swap free. Not "low." Not "concerning." Zero. The server had been running like this for — checking uptime — **373 days**. Over a year with no swap headroom at all, and nobody noticed because nothing had crashed yet. The server was basically doing a continuous trust fall into the OOM killer's arms, and the OOM killer just kept catching it.
+
+The culprit was MySQL. Not Sentry's MySQL — Sentry uses Postgres. This was the old PHP monolith's MySQL, running on the same machine, calmly eating 41% of RAM (12.7 GB) like it was paying rent.
+
+On top of that: 59 Docker containers, a monitoring agent (Netdata) consuming 3.6 GB of RAM for the privilege of watching the server struggle, and Docker Compose v2.21.0 — which was about to become a problem.
+
+## The plan: four hops and a runbook
+
+Sentry self-hosted has this concept of **hard stops** — mandatory version checkpoints you cannot skip. If you are on 23.9.1 and the latest is 26.3.1, you do not just `git checkout 26.3.1` and run the installer. You will get a polite error message, or more likely, a database migration that assumes tables exist from a version you never installed.
+
+The upgrade path looked like this:
+
+```
+23.9.1 → 23.11.0 → 24.8.0 → 25.5.1 → 26.3.1
+         (hop 1)    (hop 2)   (hop 3)   (hop 4)
+```
+
+Four hops. Each one means: stop Sentry, checkout the version tag, run the installer, wait for database migrations, start Sentry, verify it works, then move on to the next. Skip one, and you are in uncharted territory with your production error tracking.
+
+I wrote a runbook. The runbook was 1,020 lines. For context, some of my entire side projects have fewer lines than that runbook. It had phase gates, verification blocks, trace templates, and a log format you were supposed to paste into a scratch file on the server.
+
+Was the runbook overkill? We will find out.
+
+## Pre-flight: making the server survivable
+
+The first problem was RAM. Running database migrations on a server with zero swap is how you get a partially-migrated Postgres database and a very bad afternoon. The mitigation plan was three steps:
+
+**Step one**: Stop Netdata. Sorry, monitoring agent. You are consuming 3.6 GB to watch a server I am about to intentionally stress. You can come back later.
+
+**Step two**: Create a temporary 4 GB swap file.
+
+```bash
+sudo fallocate -l 4G /swapfile-temp
+sudo chmod 600 /swapfile-temp
+sudo mkswap /swapfile-temp
+sudo swapon /swapfile-temp
+```
+
+**Step three**: Shrink MySQL's buffer pool from 13 GB to 8 GB. This is the server equivalent of asking your roommate to please move their stuff so you can fit a couch through the door.
+
+```bash
+mysql -u root -e "SET GLOBAL innodb_buffer_pool_size = 8589934592;"
+```
+
+After all three: 9.8 GB available RAM, 5.1 GB swap free. The server could breathe.
+
+## Backup everything that matters
+
+Before touching Sentry, I backed up:
+
+- Config files (`.env`, `sentry.conf.py`, `config.yml` with the Slack credentials)
+- A full Sentry export (orgs, projects, teams — 278 KB of JSON)
+- Seven Docker volumes as tarballs — Postgres alone was **7.6 GB** compressed
+- All six DSN URLs (the connection strings every client app uses)
+- A snapshot of every running container
+
+Total backup: around 8 GB. Most of the time was spent waiting for the Postgres tar to finish.
+
+The DSN recording is the one you absolutely cannot skip. If those change, every client app needs a redeployment. They did not change. But you check anyway.
+
+## The hops
+
+**Hop 1 (23.9.1 → 23.11.0)**: Under ten minutes, but not without drama. The install script asked me if I wanted to send telemetry data to Sentry (the company). I did not have an environment variable set to skip this, so it just sat there, waiting for a `y/n` I was not expecting. A few minutes wasted staring at a frozen terminal before I figured out what it wanted. Lesson learned: `REPORT_SELF_HOSTED_ISSUES=0`.
+
+**Hop 2 (23.11.0 → 24.8.0)**: Maybe ten, twelve minutes. This one had a breaking config change — Django's cache backend switched from `MemcachedCache` to `PyMemcacheCache`. The options API is completely different between the two. If you do not edit `sentry.conf.py` before running the installer, things break. I knew about this from the planning phase, so I had the fix ready. The runbook earned its keep.
+
+**Between hop 2 and 3**: Docker Compose needed upgrading. Sentry 25.5.1 requires Compose v2.32.2 minimum. We had v2.21.0. One `curl` and a `sudo` later, we had v2.32.4. Quick detour, nothing dramatic.
+
+**Hop 3 (24.8.0 → 25.5.1)**: Smooth. Under ten minutes. This is the version that introduced the taskbroker architecture (replacing Celery) and PgBouncer for connection pooling, but the transition does not complete until 26.x.
+
+**Hop 4 (25.5.1 → 26.3.1)**: Another ten-ish minutes, after a false start. The installer introduced a new interactive prompt asking about S3 nodestore migration. In non-interactive mode, `read -p` fails and kills the script. Fix: `APPLY_AUTOMATIC_CONFIG_UPDATES=1`. This is the kind of thing that makes you wonder why "non-interactive install" is not just a single flag.
+
+Then the 503.
+
+After `docker compose up -d`, the Sentry URL returned "Service Unavailable." I stared at the screen for what felt like a long time but was probably a couple of minutes, with the specific kind of calm that only appears when you have 8 GB of backups and know exactly where they are. The nginx container was restarting. The web container was healthy. It resolved itself. The runbook said "no action needed — just wait." The runbook was right.
+
+## How long did it actually take?
+
+The upgrade itself — backups, four hops, blockers, the 503 scare, verification — took maybe two, three hours. The install scripts were about ten minutes each. The migrations I had been dreading ran without a sound. The real time sink was backing up the Postgres volume, which took almost half an hour on its own.
+
+But that is not the real answer.
+
+The real answer is that the planning took longer than the execution. I spent over four hours before I touched a single thing on that server. SSH in, document the exact state of everything — RAM, swap, disk, Docker versions, every running container, every volume, every config file. Then figure out the hop path, read every release note between 23.9.1 and 26.3.1, find out which hops have breaking config changes and which need newer Docker Compose. Then write the runbook. Then dry-run it in my head.
+
+This server had years of error data — the kind you go back to when checking regressions. Team member accounts. Project configs. Slack integrations. Six applications relying on it. If a migration failed halfway through and corrupted the Postgres data, that history is gone. There is no "oops, let me try again." You either have backups that work or you have a very uncomfortable conversation with your team.
+
+So yes, the upgrade took a morning. But the work that made it take only a morning? That took days.
+
+No data lost. All six DSNs unchanged. Fifty-nine containers went in, seventy-eight came out.
+
+## The victory lap that wasn't
+
+Here is where the story should end. Sentry upgraded. All six DSNs intact. Seventy-eight containers healthy. The new version came with the things we actually upgraded for — AI Agent Monitoring with MCP tracing, the new taskbroker architecture, PgBouncer, SeaweedFS nodestore. All of that was working out of the box.
+
+But then I noticed **Sentry Logs** in the docs. Structured logging that goes directly into Sentry alongside your errors and traces. No separate ELK stack, no Grafana Loki, just logs flowing into the same place your exceptions already live. This was not part of the upgrade plan — Logs is a separate feature you have to enable manually. But now that I was on 26.3.1, I could.
+
+The upgrade was done by late morning. By lunch I was already in a new terminal session trying to enable it.
+
+First thing I did was grep for `ourlogs` in the Sentry config. Empty result. The feature flags did not exist.
+
+Right. The install script from 26.3.1 added the base services but not the feature flags. You need to re-run `./install.sh` with the right options for it to inject the `ourlogs-*` flags into your config.
+
+Before re-running the installer, I actually paused and asked myself: "Does `./install.sh` clear all my existing data, users, and config?"
+
+I had run this script four times that morning. But somehow, the fifth time, on a server I had just spent hours carefully upgrading, the thought of running it again made me hesitate. The answer is no, it does not clear your data. I knew this. I asked anyway.
+
+Re-ran the installer. Grepped again. Ten `ourlogs-*` feature flags now present in `sentry.conf.py`. The EAP items consumer container was running. The Logs page was available in the UI.
+
+I clicked on it.
+
+Empty.
+
+**"I did everything and the logs are not there."**
+
+I double-checked the feature flags. All enabled. Checked the containers. All healthy. Checked the Sentry UI. The Logs section was right there, accessible, with a nice empty state saying "no logs found."
+
+Then the obvious thing hit me. None of my projects actually use the Sentry logger.
+
+I had enabled the server-side feature. I had not shipped any code that actually sends logs to it. The kitchen was built, the stove was on, and nobody was cooking.
+
+Enabling Sentry Logs on the server is step one. Step two is updating your application's Sentry SDK to use the new `Sentry.logger` API. You need `enableLogs: true` in your `Sentry.init()`, and a logger that calls `Sentry.logger.info()` / `Sentry.logger.error()` instead of (or alongside) `console.log`. Without that, the Logs page will sit there empty, politely waiting for data that never arrives.
+
+A colleague had actually written the NestJS integration weeks ago — a `SentryLogger` class that extends NestJS's `ConsoleLogger` and forwards `log`, `error`, and `fatal` calls to Sentry. It was sitting in a branch. Waiting for the server-side feature to be turned on. Waiting for today.
+
+We deployed it. The logs appeared. I took a screenshot.
+
+Minutes later I was taking screenshots of logs flowing in.
+
+From "I did everything and the logs are not there" to showing it off — that is the developer emotional arc in its purest form. Panic, confusion, realization, deployment, screenshot. In that order. Every time.
+
+## What actually changed
+
+For anyone running self-hosted Sentry and considering the same upgrade, here is what went from 23.9.1 to 26.3.1:
+
+- **Celery → taskbroker**: The worker architecture is completely new. Celery workers are replaced by `taskworker` and `taskscheduler` containers.
+- **PgBouncer**: PostgreSQL connection pooling is now built in. One less thing to configure yourself.
+- **SeaweedFS nodestore**: Event data that used to bloat Postgres is now stored in an S3-compatible object store (SeaweedFS). This is the biggest architectural change. Existing data is transparently migrated on read.
+- **Docker registry**: Images moved from `getsentry/` (Docker Hub) to `ghcr.io/getsentry/` (GitHub Container Registry).
+- **AI Agent Monitoring + MCP tracing**: Track agent runs, tool calls, and MCP server interactions directly in Sentry. This was the main reason we upgraded.
+- **Container count**: 59 → 78. Yes, nineteen new containers. Your `docker ps` output now needs a wider terminal.
+- **Sentry Logs** (manual enable): Structured logging, directly in Sentry. Not part of the upgrade — you have to enable feature flags and re-run the installer separately. Worth it, once you actually ship the client code to use it.
+
+## The non-interactive install cheat sheet
+
+If you take one thing from this post, take this. For every Sentry self-hosted version from 23.11.0 through 26.3.1, this is the incantation:
+
+```bash
+REPORT_SELF_HOSTED_ISSUES=0 \
+APPLY_AUTOMATIC_CONFIG_UPDATES=1 \
+./install.sh --skip-user-creation
+```
+
+Saves you from every interactive prompt I hit. Tape it to your monitor.
+
+## Was the 1,020-line runbook worth it?
+
+Yes.
+
+Not because the upgrade was complex — it turned out to be straightforward. But because when the Logs page was empty and I did not know why, and when the URL returned 503 and I did not know how long it would last, having a document that said "this is expected, here is what to check, here is when to worry" was the difference between a methodical next step and a panicked `docker compose down`.
+
+The runbook was not overkill. The runbook was the reason the upgrade took a morning instead of a weekend.
+
+And the Astro documentation site I built afterward to record everything? That one might have been overkill. But it does look nice.
