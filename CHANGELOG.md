@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.15](https://github.com/vineethkrishnan/portfolio/compare/v0.0.14...v0.0.15) (2026-04-16)
+
+
+### Documentation
+
+* **blog:** add sentry self-hosted upgrade story post ([#26](https://github.com/vineethkrishnan/portfolio/issues/26)) ([343c8a9](https://github.com/vineethkrishnan/portfolio/commit/343c8a961fd0cfc8683e58b6cf7fce6eb50d2d2f))
+
 ## [0.0.14](https://github.com/vineethkrishnan/portfolio/compare/v0.0.13...v0.0.14) (2026-04-15)
 
 
