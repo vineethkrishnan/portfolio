@@ -1,0 +1,185 @@
+---
+title: "Building mcp-pool: one week, eleven MCP servers, one shared OAuth library"
+description: "How a single Stripe MCP server turned into a monorepo of eleven, and why half the engineering effort went into not writing the same OAuth flow six times."
+pubDate: 2026-04-17
+tags: ["typescript", "mcp", "oauth", "monorepo", "ai-tooling", "open-source"]
+draft: false
+---
+
+# Building mcp-pool: one week, eleven MCP servers, one shared OAuth library
+
+![A developer at a laptop with a glowing circular pool on the desk in front of him filled with floating SaaS icons — cards, bug shapes, notebooks, calendars, charts — all connected by thin threads into his laptop.](/blog/mcp-pool-hero.png)
+
+This is another post in the series where I walk through my open-source projects. Earlier ones covered [backupctl](/blog/building-backupctl), [agent-sessions](/blog/building-agent-sessions), and a few smaller tools. This one is about **mcp-pool** — a monorepo of MCP servers for the SaaS tools I actually use at work.
+
+It started as a Stripe MCP server. One package, one weekend. Somewhere along the way it grew into eleven — Stripe, Sentry, Notion, Linear, Datadog, Vercel, PagerDuty, HubSpot, Intercom, Shopify, Google Workspace — plus a shared OAuth library holding them together. Most of that happened faster than I'd planned, partly because the monorepo setup I did on day one kept paying off, and partly because the Claude Code sessions I used to scaffold each server got better every time I ran one.
+
+The interesting part is not the package count. Pasting SDK code into eleven folders is not engineering. The interesting part is what happened a few days in, when I realised six of those servers were going to need OAuth and I was about to write more or less the same auth flow six times.
+
+## Why Stripe first
+
+Before any of the architecture decisions, there was a small thing that kept bugging me.
+
+I was using Claude Code heavily for day job stuff, and at some point I noticed I had three browser tabs open all the time — Stripe dashboard, Sentry, and a Notion page with our on-call runbook. Every "why did this customer's payment fail" or "what did this error look like yesterday" started the same way. Switch to browser. Find the tab. Log in again because the session expired. Copy something. Come back to the editor. Paste. Ask the agent to keep going.
+
+MCP was already in the picture by then. I had wired up a couple of third-party servers and they mostly worked, but the ones I wanted most were either missing, or heavyweight, or maintained by someone whose priorities were clearly different from mine. So one evening I sat down and told myself: just build one. Start with Stripe because it's the one I open most, and also the one where the API is so well-documented that getting a clean read-only subset working is basically a weekend project.
+
+That was the whole plan. One server. Ship it to npm. Move on.
+
+I did not move on.
+
+## Day one: the monorepo decision
+
+This is where I made the first choice that paid off for the rest of the week.
+
+A tiny voice said: just ship Stripe as a single repo. Call it `stripe-mcp`, npm it, be done. I ignored the voice. If I was going to write one MCP server, there was at least a fifty percent chance I'd write another one next month. And if I wrote two, I was absolutely going to hate myself for duplicating the build config, the test setup, the release pipeline, the lint rules.
+
+So day one, before writing any Stripe code, I set up a monorepo. npm workspaces. TypeScript strict mode. Jest with a 100% line coverage target. ESLint, Prettier, husky, commitlint. release-please for independent versioning per package. A Docusaurus site scaffolded next to the packages folder.
+
+This felt like overengineering for one server. In practice it paid for itself as soon as the second package showed up — no rebuilding CI, no rewriting release config, no fighting the test runner. Every package I added after Stripe was basically drop-in.
+
+The initial commit went in as `406ad19: initial monorepo setup with stripe-mcp and docusaurus`.
+
+## Sentry next, and the self-hosted thing
+
+Stripe was in a working state within a few hours. I published it, opened Claude Desktop, pointed it at the package, and asked *"how many active subscriptions do we have"*. It answered. That was a good moment.
+
+Next one was obvious. Most of my error-investigation workflow goes through Sentry, but we run a **self-hosted** Sentry instance, not the SaaS one. And every Sentry MCP server I checked on npm had the base URL hardcoded to `sentry.io`. Fine for most users. Useless for me and for everyone else I know who runs Sentry on their own infrastructure for compliance or cost reasons.
+
+So I built the Sentry MCP with a `SENTRY_BASE_URL` env var from the very first commit. Default to `sentry.io` if not set. Point it at `https://sentry.yourdomain.tld` if you self-host. No forks, no patches, same npm package for both worlds:
+
+```json
+{
+  "mcpServers": {
+    "sentry": {
+      "command": "npx",
+      "args": ["-y", "@vineethnkrishnan/sentry-mcp"],
+      "env": {
+        "SENTRY_AUTH_TOKEN": "sntrys_...",
+        "SENTRY_BASE_URL": "https://sentry.mydomain.tld"
+      }
+    }
+  }
+}
+```
+
+This is the one I use most, and it has quietly changed how I deal with errors during the day. Before, a Sentry issue in a Slack alert meant: click the link, switch tabs, log back in because the session expired, read the stack trace, copy a snippet, go back to the editor, paste, think. Now it is:
+
+> *"Pull up the latest unresolved issue in project `api`, show me the stack trace, and suggest a fix."*
+
+The agent calls the Sentry MCP, gets the issue, pulls the event with the stack frames, and either proposes a code change or drills into the file directly. When I'm happy with the fix, I tell it to resolve the issue in Sentry and it does. The write-ops version (more on that later) means the whole loop — investigate, fix, resolve — stays in one place, against my own self-hosted instance, without me touching the dashboard. That part is genuinely the reason I kept building the rest of the pool.
+
+Once Stripe and Sentry were both shipping, I had two packages in the monorepo — and the duplication started showing up. Not in a scary way, but enough that my lint tool flagged it.
+
+## The wall I was about to hit
+
+I opened a new Claude Code session and just said:
+
+> Yes I need to add oAuth to the supporting mcp packages, so what could be the architecture?
+
+That sentence was the entire setup for the next two days of work.
+
+Here's what I was staring at. Stripe uses a static API key. Sentry uses a static API token. Easy. But the ones I wanted next — Notion, Linear, HubSpot, Intercom, Shopify, Google Workspace — all need OAuth2. And "OAuth2" is one of those phrases that sounds like a single protocol but is actually six slightly different protocols that agree on the overall shape and disagree on every small thing that matters.
+
+Each one was going to need:
+
+- A local token file at some path like `~/.mcp-tokens/<server>.json`
+- A browser-based login flow with a callback server
+- Token exchange, refresh, and caching
+- A CLI command to log in and log out
+- The actual SDK integration on top of all that
+
+If I wrote this six times, copy-paste style, three things would happen. One, I'd get bored around server three and start cutting corners. Two, the first time I found a bug in the refresh logic I'd have to fix it in six places. Three, `jscpd` (a code-duplication detector in my CI) would start blocking PRs because the overlap would be enormous.
+
+The correct answer was obvious in hindsight. The only reason it was not obvious earlier is that I had two packages. With two, you don't see the pattern. With six pending, you can't not see it.
+
+## oauth-core
+
+![A central glowing orb with six clean cables running out to six small labeled boxes around it, next to a faded image of a tangled knot of wires being replaced.](/blog/mcp-pool-oauth.png)
+
+I extracted a package called `@vineethnkrishnan/oauth-core`. Its job is small and boring, which is exactly what you want from an infrastructure package.
+
+It exposes:
+
+- A `TokenProvider` interface that hides the difference between OAuth and static-key auth, so the MCP tool code doesn't have to care which one it's using.
+- A `LocalFileTokenStore` that handles reading, writing, and migrating those `~/.mcp-tokens/<server>.json` files.
+- A set of OAuth strategies — authorization code, refresh, PKCE — that each server can pick from by passing a small config object.
+- A CLI helper that wires up `<server> auth login` and `<server> auth logout` commands so every server has the same UX.
+
+The per-server OAuth config ends up looking like this:
+
+```typescript
+export const notionAuthConfig: OAuthProviderConfig = {
+  name: "notion",
+  authorizationUrl: "https://api.notion.com/v1/oauth/authorize",
+  tokenUrl: "https://api.notion.com/v1/oauth/token",
+  scopes: [],
+  clientIdEnv: "NOTION_CLIENT_ID",
+  clientSecretEnv: "NOTION_CLIENT_SECRET",
+};
+```
+
+That's basically the whole auth setup for Notion. Same for Linear, HubSpot, Intercom, Shopify, Google Workspace — each one is a dozen lines of config instead of a few hundred lines of duplicated flow code. The commit that landed this was `417d8a7: feat(oauth): add shared oauth-core package and integrate across 6 mcp servers`.
+
+One thing I want to be honest about: the first version of `oauth-core` was too clever. I tried to abstract every possible OAuth variant behind a single interface and ended up with a config object that had more fields than some of the SDKs I was wrapping. I threw it away and started over with the rule that if a provider doesn't need a field, the field doesn't exist. The second version was boring, readable, and has not needed a breaking change since.
+
+## Adding the rest
+
+Once `oauth-core` was in place, writing a new server stopped feeling like a project and started feeling like filling in a form.
+
+Each new one was a small amount of actually-new code:
+
+- A thin `services/` layer wrapping the official SDK (if one existed) or `fetch` (if not).
+- A `tools/` folder defining the MCP tool schemas — what the AI agent sees as callable functions.
+- Tests. Real tests, not aspirational tests. Every package had to hit the coverage target before it was allowed to merge.
+
+I added Linear, Notion, Vercel, Datadog, HubSpot, Intercom, Shopify, PagerDuty, and Google Workspace this way — one after another, each building on what the previous one had already figured out. The commit that landed them is `f137e0c: add 9 new mcp servers for popular saas platforms`, but the commit itself isn't the interesting thing. The interesting thing is that the auth config was small, the SDK wrappers were small, and the tool definitions were the only piece that actually needed thought per-provider.
+
+The tests, for what it's worth, were not negotiable. I wasn't moving fast because I was skipping them. I was moving fast because every previous package had tests, which meant when I copied its structure I inherited a working test pattern instead of a blank file.
+
+## Shipping is not enough
+
+![A calendar showing one week with small glowing package boxes stacked higher each day, and a tired but pleased developer glancing at it with a coffee cup.](/blog/mcp-pool-week.png)
+
+At some point the eleven packages were on npm, the docs site was live, and `oauth-core` was carrying the shared weight. I thought the hard part was done.
+
+Then I went to Glama — the community registry that a lot of people use to discover MCP servers — and noticed something. My entries were there, but they showed up with "security and quality not tested" badges. Which is a polite way of saying "this might be junk". Even the great-looking packages in my monorepo were sitting behind those badges, invisible to anyone who filters by verified servers.
+
+So there was a whole second phase of work that was just about being a good citizen of the ecosystem. I added a `Dockerfile` so the Glama sandbox could spin up each server and verify it responded to introspection. I added read-only tool annotations so clients could show users which tools were safe and which ones wrote data. I added `glama.json` metadata and an MCP Registry manifest. I added a CI workflow that built the Docker image and ran smoke tests. None of this was code users would ever see, and all of it was required to actually be *findable*.
+
+This was the moment the project stopped being "I built some MCP servers" and started being "I run an MCP server pool that people can actually adopt without vetting from scratch". Different kind of work, same project.
+
+## Write operations, eventually
+
+The first ten days of the project were deliberately read-only. Read Stripe balances, read Sentry issues, read Linear tickets. No creating, updating, or deleting anything. I wanted the safety story to be *obvious* — if the AI agent goes off the rails, at worst it reads something it shouldn't have.
+
+Write ops landed in commit `24d762c: add write operations to all 11 mcp servers`, and I structured them with one hard rule: **write tools are opt-in per server, not global**. You set an env var to enable them. Otherwise the server starts in read-only mode and the write tools are not even exposed to the agent. This keeps the default safe and lets users flip the switch only for the servers where they actually want the agent to take action.
+
+If you're wondering why this is a big deal: an MCP tool is just a function signature in the agent's context. If the tool exists, the agent may call it. The only way to really prevent it is to not advertise the tool in the first place. Env-gated tools make this a boring one-line config instead of a runtime check that might leak.
+
+## Retrospective
+
+Looking back at the repo, a few things worked and a few I'd do differently.
+
+**What worked:**
+
+- **Monorepo before the second package.** Setting up the monorepo before writing any Stripe code was the most useful decision of the whole project. Every package after Stripe was drop-in.
+- **Extracting oauth-core at the right moment.** Too early, and I would have built the wrong abstraction from Stripe's static-key auth. Too late, and I would have been refactoring six packages at once. Roughly the right time was when the third OAuth server was about to be written — hold off until then, then stop and extract.
+- **100% line coverage as a merge gate.** Sounds harsh. In practice it mostly just forced me to structure code in ways that were naturally testable.
+- **Self-hosted support from day one in Sentry.** Small environmental detail, but it's the thing that actually made the MCP useful for my own day-to-day.
+
+**What I'd change:**
+
+- **The first version of `oauth-core`.** As mentioned, it was too abstract. I caught it in the same week, but I'd catch it earlier next time by writing the second caller of a new abstraction *before* finalising the API.
+- **Docker and Glama from day one.** I treated discoverability as a phase-two concern. Should have been phase-one, alongside npm publishing. A package nobody finds doesn't help anyone.
+- **The docs site.** Docusaurus is fine, but the default templates eat a lot of configuration time. Next time I'd pick something more minimal or start with the README-only approach and let docs grow organically.
+
+## Where it goes next
+
+The public roadmap is in `roadmap/` inside the repo. Short version: v0.2.0 is landing write ops across the board (already done, mostly), SSE transport, and streaming responses. v0.3.0 is about webhooks, multi-account support — "show me Stripe balances for *both* tenants" — and a few more servers people have asked for (GitHub, Slack, Airtable are the three loudest).
+
+If you're someone who also spends their day in three SaaS dashboards and an AI agent, `mcp-pool` is on [npm](https://www.npmjs.com/~vineethnkrishnan) and the source is on [GitHub](https://github.com/vineethkrishnan/mcp-pool). The docs are at [mcp-pool.vineethnk.in](https://mcp-pool.vineethnk.in).
+
+That's it for this one. Thanks for reading — see you in the next post.
+
+Bis bald.
