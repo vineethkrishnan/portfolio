@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.16](https://github.com/vineethkrishnan/portfolio/compare/v0.0.15...v0.0.16) (2026-04-17)
+
+
+### Documentation
+
+* **blog:** add mcp-pool story post ([#28](https://github.com/vineethkrishnan/portfolio/issues/28)) ([99b8514](https://github.com/vineethkrishnan/portfolio/commit/99b851464c7ec81691a44dac9c4bc379b5ceffb7))
+
 ## [0.0.15](https://github.com/vineethkrishnan/portfolio/compare/v0.0.14...v0.0.15) (2026-04-16)
 
 
