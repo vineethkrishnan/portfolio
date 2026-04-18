@@ -1,0 +1,92 @@
+---
+title: "Building docling-server: a one-command document API for our AI pipeline"
+description: "Why I wrapped docling into a full Docker Compose setup with FastAPI, Celery, and nginx — so our AI project could stop worrying about messy PDFs, Word files, and scanned junk, and just get clean markdown back."
+pubDate: 2026-04-18
+tags: ["docling", "fastapi", "celery", "docker", "ai-pipeline", "open-source"]
+draft: false
+---
+
+# Building docling-server: a one-command document API for our AI pipeline
+
+![A tired developer at a laptop feeding a giant stack of messy paper documents into a glowing machine on his desk, and clean markdown scrolls coming out the other side, editorial illustration style.](/blog/docling-server-hero.png)
+
+This is another one in the series where I walk through my open-source projects. Earlier ones covered [backupctl](/blog/building-backupctl), [mcp-pool](/blog/building-mcp-pool), and a few smaller tools. Today it is **docling-server** — the thing I built when our AI project needed a proper way to turn messy documents into clean markdown, and calling docling directly from the app started feeling like a bad idea.
+
+If you have not seen [docling](https://docling-project.github.io/docling/) yet, it is IBM's document processing library. PDF, DOCX, PPTX, scanned images, tables, the whole lot — out comes structured output. Very good at its job. The problem is not docling. The problem is everything around it.
+
+## The itch
+
+So the AI project needed document ingestion. And by "document" I do not just mean PDFs. Users would drop in whatever they had lying around — Word files, rich text, PowerPoint decks, scanned contracts, invoices, internal reports in weird old formats, the kind of unstructured stuff nobody formats nicely — and the pipeline had to pull clean text out of every one of them. Clean enough that the downstream steps could actually reason about it.
+
+You can call docling as a library. In a notebook it is lovely. In a production service it gets awkward fast. First, the conversions are slow. A scanned document running through OCR can easily take longer than any sane HTTP request should. Second, docling pulls in a small forest of dependencies — OCR engines, model weights, CUDA bits if you want the GPU path. You do not really want that zoo living inside your main app container.
+
+And there was one more thing. We had this Hetzner GEX box sitting there with a proper GPU on it, exactly for heavy lifting like this. It made no sense to install docling into the app. The AI app should ask a question. The GPU box should do the work.
+
+What was missing was the thin layer in between. An HTTP endpoint that says *here is a document, give me markdown back*. That layer is what became docling-server.
+
+## What "one command" actually means
+
+The pitch is small. Clone the repo, fill in a `.env`, run `make init`. You get a protected HTTP endpoint over SSL — API key in the header, Let's Encrypt doing the certificate bit, nginx enforcing TLS on the edge — that takes a file or a URL and returns markdown, JSON, or plain text. That is it.
+
+Under the hood it is less small. The compose file spins up:
+
+- **nginx** for the reverse proxy, with Let's Encrypt doing the TLS bit
+- **FastAPI** for the actual API endpoints
+- **Celery workers** doing the real document conversion
+- **Redis** as the broker and result backend
+- **Flower** for a dashboard to peek at what the workers are up to
+
+The split matters. FastAPI accepts the request, hands off to Celery, and hands you back a task ID. The worker chews through the document in the background, writes the result to Redis, and you come back to `/tasks/{id}` when you want it. No waiting thirty seconds on an HTTP connection while a scanned invoice is being OCR'd. No timeouts. No retry headaches.
+
+A minimal request looks like this:
+
+```bash
+# kick off a conversion
+curl -X POST https://docling.yourdomain.com/convert \
+  -H "X-API-Key: your-token" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://arxiv.org/pdf/2408.09869"}'
+
+# come back later for the result
+curl https://docling.yourdomain.com/tasks/TASK_ID \
+  -H "X-API-Key: your-token"
+```
+
+That is the whole surface area you need on the calling side. The AI project does not care that there is a GPU, an OCR engine, six model files, and a CUDA runtime behind that URL. It just asks, and markdown comes back.
+
+Has your team also had this moment — where you realised the clean thing was to hide all the mess behind a single HTTP call and move on? I feel like half the services I build end up being exactly that.
+
+## The CUDA-in-Docker saga
+
+I will not pretend the setup was smooth. The part that ate the most time was getting Docker to actually see the GPU.
+
+CUDA on bare metal is one thing. CUDA inside a Docker container using a GPU that belongs to the host is a different level of patience. I honestly do not remember every exact error message I ran into — this was some time ago and I have done a decent job of repressing it — but I remember the shape of the problem. The container would happily start. The Python process inside would happily import torch. And then torch would calmly tell me there were zero CUDA devices available, thank you very much.
+
+If you have ever been through this, you know the drill. Is the nvidia driver installed on the host? Yes. Is the container toolkit installed? Yes. Is the runtime configured in `/etc/docker/daemon.json`? Pretty sure yes. Is the compose file using `runtime: nvidia` or the new `deploy.resources.reservations.devices` block? Which one is the right one this year? Who knows anymore.
+
+I got it working. I got it working the way most of us get these things working — by reading five GitHub issues, trying four combinations, and eventually landing on the one that did not throw. The annoying bit is that once it works, it just keeps working, and you forget exactly which of the four things was the actual fix. If you are setting this up on your own GPU box, budget a bit of time for this specifically. It is not docling's fault. It is the price of doing business with NVIDIA and Docker in the same sentence.
+
+The moment the first OCR conversion came back and I saw the tables from a scanned document rendered as clean markdown — that was a good moment. Small win. But the kind of small win that makes a whole evening of driver wrangling feel worth it.
+
+## What the AI project actually gets
+
+From the app's point of view, the contract is dumb simple. Upload a file, or point at a URL. Poll a task. Get markdown. Feed it into whatever downstream chain was waiting for clean text.
+
+A few things that turned out to matter more than I expected:
+
+- **Batch endpoint.** Users rarely upload one file. They upload a folder. `/convert/batch` lets the worker pool chew through them in parallel instead of us queueing sequentially from the app side.
+- **Embeddings on the same box.** Since we already had the GPU warm, generating vector embeddings right there saved an entire network hop. The app gets text *and* vectors from one call.
+- **API key + rate limits at nginx.** It is an internal service, but internal services have a way of getting called from places you did not plan. A token and a per-IP rate limit at the edge cost almost nothing to set up and save a lot of explaining later.
+- **Flower on localhost only.** If a Celery worker is stuck, you want to know. If a Flower dashboard is accidentally open on the public internet, you really do not want that. Binding it to localhost and tunnelling over SSH when I need it is the lazy, correct answer.
+
+None of this is clever. Most of it is the boring scaffolding you end up writing for any long-running task service. The good part is that once it is all in one repo with a `make init`, the next person who needs a document processing endpoint can stand it up on their own GPU box without redoing any of the thinking.
+
+## Who is this for
+
+Honestly, future me. The next time I need docling behind an API, I am not redoing the Celery setup and the nginx config from scratch.
+
+But also anyone else going down this path. If you are trying to get docling into a production shape — on your own hardware, with GPU, with OCR, with a queue, with TLS — and you do not want to glue it together from six different blog posts, this repo is pretty much that glue already. Not polished. Not fancy. But it works, and it is documented enough that you are not guessing what `make init` is about to do.
+
+The repo is at [github.com/vineethkrishnan/docling-server](https://github.com/vineethkrishnan/docling-server). The deployment doc has the actual commands. If you hit the CUDA-in-Docker thing too, you have my sympathy — we have all been there.
+
+So that is where I will stop. If you have a different way of doing this, or a cleaner trick for the GPU-in-Docker bit, I genuinely want to hear it — drop me a note. Otherwise, see you when the next interesting problem shows up.
