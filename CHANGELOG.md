@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.18](https://github.com/vineethkrishnan/portfolio/compare/v0.0.17...v0.0.18) (2026-04-20)
+
+
+### Documentation
+
+* **blog:** add ipwhoami packaging post ([#32](https://github.com/vineethkrishnan/portfolio/issues/32)) ([67d4f0d](https://github.com/vineethkrishnan/portfolio/commit/67d4f0d802606681332d76108d5f32975b83557c))
+
 ## [0.0.17](https://github.com/vineethkrishnan/portfolio/compare/v0.0.16...v0.0.17) (2026-04-19)
 
 
