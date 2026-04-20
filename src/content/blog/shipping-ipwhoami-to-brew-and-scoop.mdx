@@ -1,0 +1,178 @@
+---
+title: "The second half of shipping a CLI: Homebrew tap, Scoop bucket, and the SHA dance"
+description: "What happens after you publish to npm? For Mac and Windows users, mostly nothing. Here is the packaging side-quest of getting ipwhoami onto brew and scoop."
+pubDate: 2026-04-20
+tags: ["cli", "homebrew", "scoop", "packaging", "github-actions", "release-please"]
+draft: false
+---
+
+# The second half of shipping a CLI: Homebrew tap, Scoop bucket, and the SHA dance
+
+![A tired developer at a desk with two laptops side by side, one showing a Mac terminal with brew install and the other a Windows terminal with scoop install, a cartoon frothy beer mug mascot beside the Mac and a metal ice cream scoop mascot beside the Windows laptop, editorial illustration style.](/blog/ipwhoami-packaging-hero.png)
+
+## The gap nobody mentioned
+
+So you publish a CLI to npm. You put the install line in the README — `npm i -g ipwhoami`. You tell a few friends. You move on with your life.
+
+Then someone on a Mac opens a terminal, reads the README, and thinks, *why do I need Node on my machine for a tool that just looks up an IP?* Someone on Windows reads the same line and thinks, *what is npm, exactly?* Both of them close the tab. Not because the tool is bad. Because the install line is not the one they are used to.
+
+This is the part of shipping a CLI that nobody warns you about. Getting the tool working is half the job. Getting it installed the way people on their specific OS actually install things is the other half.
+
+For Mac, that means `brew install`. For Windows, that means `scoop install`. Both of them are one line. Both of them look boring from the outside. And setting them up turned out to be a lot more work than I thought it would be — two extra repos, a Ruby file I had never written before, a JSON manifest with PowerShell inside it, and a SHA256 dance that I broke a few times before getting it right.
+
+This is the packaging side-quest for `ipwhoami`, written down honestly.
+
+## The tap, and the weirdly specific naming rule
+
+The first thing I learned about Homebrew is that it has opinions. Strong ones.
+
+If you want to publish a package under your own GitHub namespace, the repo holding your formula must be named `homebrew-<something>`. Not close to it. Not similar. Exactly that prefix. Because when a user types `brew tap vineethkrishnan/ipwhoami`, brew quietly goes looking for `github.com/vineethkrishnan/homebrew-ipwhoami`. If the repo is named anything else, nothing happens. No error worth reading. Just a polite failure.
+
+So I made the repo. One file inside it that matters — `Formula/ipwhoami.rb`. Yes, Ruby. A language I have probably written three lines of in my entire career, for a package manager I use every other day without ever looking inside.
+
+The good news is the formula itself is tiny.
+
+```ruby
+class Ipwhoami < Formula
+  desc "IP geolocation lookup from your terminal"
+  homepage "https://github.com/vineethkrishnan/ipwhoami"
+  url "https://github.com/vineethkrishnan/ipwhoami/archive/refs/tags/ipwhoami-v1.2.1.tar.gz"
+  sha256 "8a85739e0a8ac46a6195241d458a4108a9a2c5f042cde90846719161021852ab"
+  license "MIT"
+
+  depends_on "node" => ">=18"
+
+  def install
+    libexec.install "bin", "src", "package.json"
+    bin.install_symlink libexec/"bin/ipwhoami.js" => "ipwhoami"
+  end
+
+  test do
+    assert_match "ipwhoami", shell_output("#{bin}/ipwhoami --version")
+  end
+end
+```
+
+The bad news is every one of those lines cost me a read of the docs before I fully understood what it was up to.
+
+The `url` is not some release asset or a zip I uploaded somewhere. It is the tarball GitHub generates for you, automatically, for every tag you push. Free CDN, basically. The `sha256` is how brew makes sure the file it downloaded is the one I signed off on. One byte off and the install fails loud, which is exactly what you want.
+
+The `install` block was the part I spent most time on. You do not want to scatter loose `bin/` and `src/` folders into `/opt/homebrew` like some tragic zip file exploded there. The pattern is — dump everything into `libexec` (a sandboxed folder brew gives every package), then create a single symlink into the real `bin` so the user has `ipwhoami` on their PATH. That is what `bin.install_symlink` is doing in one line.
+
+The `test do` block is optional, but I liked the idea of it. You run `brew test ipwhoami` and brew actually runs the installed binary with `--version` to confirm it is not silently broken. Shipping a tiny smoke test with the package felt like a nice thing to do.
+
+And then you push all this, install it on a clean Mac, watch it pull down Node and then your CLI, and for a second you feel like you have figured this whole thing out. That feeling lasts until you remember you still have to do the same thing for Windows.
+
+## Scoop: same job, thankfully not Ruby
+
+Scoop is Windows' answer to Homebrew. If you have not used it — it is a PowerShell-based package manager, and most of the developers I know on Windows prefer it to Chocolatey because the install model is simpler and does not need admin rights.
+
+The relief with Scoop is that the manifest is JSON, not Ruby. I know it sounds petty, but after enough rounds of squinting at `def install` and wondering if I was supposed to close the block with `end`, opening a JSON file felt like coming home.
+
+The repo is `scoop-ipwhoami`. The manifest is `ipwhoami.json`. Most of it is the same information as the Homebrew formula wearing a different outfit — same tarball URL, same SHA256 (here it is called `hash`), same pointer to Node as a dependency. The only two parts actually worth looking at are the `installer` block and the auto-update hooks at the bottom.
+
+```json
+"installer": {
+    "script": [
+        "New-Item -ItemType Directory -Force -Path \"$dir\\libexec\" | Out-Null",
+        "Copy-Item -Recurse \"$dir\\bin\" \"$dir\\libexec\\bin\"",
+        "Copy-Item -Recurse \"$dir\\src\" \"$dir\\libexec\\src\"",
+        "Copy-Item \"$dir\\package.json\" \"$dir\\libexec\\package.json\""
+    ]
+},
+"checkver": { "github": "https://github.com/vineethkrishnan/ipwhoami" },
+"autoupdate": {
+    "url": "https://github.com/vineethkrishnan/ipwhoami/archive/refs/tags/v$version.tar.gz",
+    "extract_dir": "ipwhoami-$version"
+}
+```
+
+The installer is a small PowerShell script, because Scoop does not hand you a "symlink my file into bin" helper the way Homebrew does. You write the copying yourself — make a `libexec` folder, copy `bin`, `src`, and `package.json` into it. A `bin` array elsewhere in the manifest then registers `libexec\bin\ipwhoami.js` as a shim called `ipwhoami`, which is what puts it on the user's PATH. The mental model is identical to Homebrew, you just do more of it by hand.
+
+`checkver` and `autoupdate` are nice touches Homebrew does not really have a clean equivalent of. You tell Scoop, *hey, my latest version is whatever the latest GitHub tag says it is*, and Scoop figures out new versions for users automatically. That word — *automatically* — matters a lot for what comes next.
+
+## The SHA chicken-and-egg
+
+This is the part that tripped me up the most.
+
+Both the Homebrew formula and the Scoop manifest need the SHA256 of the release tarball. But the tarball is generated by GitHub only after you push a tag. So the order of operations goes something like this:
+
+1. Bump the version in `package.json`
+2. Push a tag
+3. Wait — GitHub generates the tarball
+4. Download the tarball yourself
+5. Compute its SHA256
+6. Paste the SHA into both the formula and the manifest
+7. Push those to the tap and bucket repos
+8. Test the install on a real machine and pray
+
+Skip step 3 and you have nothing to SHA. Guess the SHA and every install fails with a loud mismatch. Copy the SHA wrong — swap a zero with an O, miss a character at the end — every install fails the same way, except now you also do not realise it is *you* who broke it until somebody opens an issue.
+
+I did this whole thing by hand the first time. And yes, I got it wrong. Pasted the SHA from the previous tag, pushed it to the tap, installed on a fresh machine, watched brew scream at me about mismatch. Great. Fine. Fixed it, pushed again, then forgot to run `brew update` before re-testing — so brew was still happily using the broken cached formula. I sat there wondering why my fix had not taken effect, until the penny dropped.
+
+Has this happened to you too? You fix a thing, you are sure you fixed it, and then you spend ages confused because the cache on your own machine is lying to you. The debugging is never the broken thing. It is always something nearby that you had not thought about.
+
+Anyway, this is the kind of dumb mistake you make exactly once, after which you decide a machine should be doing this job, not you.
+
+## Automating the whole thing so I never touch it again
+
+The main `ipwhoami` repo uses [release-please](https://github.com/googleapis/release-please) to handle versions. You write conventional commits, release-please keeps an open PR with the next version and changelog, and merging it cuts a tag. That part I had been using from the start.
+
+What I added was a set of release-triggered jobs that run after the tag gets cut. The full dance now looks like this:
+
+1. `release-please` opens a release PR. I merge it, a new tag gets pushed.
+2. The workflow fires. It publishes to npm, builds a multi-arch Docker image, and then — the point of all this — updates the Homebrew tap and the Scoop bucket.
+3. For each of those, the job sleeps a moment so GitHub can finish generating the tarball, then it curls the tarball, computes the SHA, checks out the tap or bucket repo with a cross-repo PAT, writes a fresh formula or manifest, commits, and pushes.
+
+The one step worth looking at is the SHA-compute — the heart of the whole thing the CI is doing for me so I do not have to:
+
+```yaml
+- name: Wait for tarball availability
+  run: sleep 10
+
+- name: Compute SHA256
+  id: sha
+  run: |
+    TAG="${{ needs.release-please.outputs.tag_name }}"
+    URL="https://github.com/vineethkrishnan/ipwhoami/archive/refs/tags/${TAG}.tar.gz"
+    SHA=$(curl -sL "$URL" | sha256sum | cut -d' ' -f1)
+    echo "sha256=$SHA" >> $GITHUB_OUTPUT
+```
+
+After that, the job checks out the tap repo with a cross-repo token, writes a fresh formula with the new URL and SHA baked in, and pushes. The Scoop updater does the same, just writes JSON instead of Ruby.
+
+One thing that quietly matters here — `RELEASE_PAT`. The default `GITHUB_TOKEN` a workflow gets cannot push to a different repo. For cross-repo commits (the tap and the bucket both live outside the main repo) you need a fine-grained personal access token with `contents: write` on those two repos. I missed this on my first run. The job failed at the push step with a 403 I spent longer reading than I will admit.
+
+Both jobs sleep for ten seconds before curling because GitHub's tarball generation is async — move too fast and you get a 404 or a zero-byte file. The `sleep 10` is not elegant. It is honest.
+
+After all this, my release loop turned into something much nicer. Merge the release PR. Everything downstream updates on its own. npm gets the new version. Docker Hub and GHCR get the new image. Homebrew users see it when they run `brew update`. Scoop users see it when they run `scoop update`. I do not touch anything.
+
+## What I would tell past me
+
+If I was starting this whole side-quest over, three things would go differently.
+
+One — write the release workflow first. Before the formula. Before the manifest. Get the automation scaffolded in a branch, even if the first version just prints the computed SHA to the log and exits. The whole hand-paste-a-hash phase I went through was avoidable. I just did not realise how cheap a GitHub Actions job is until I actually wrote one.
+
+Two — test the first install on a clean VM or a fresh machine. I lost a good bit of time chasing "why is brew not seeing my changes" before realising my own Mac had a cached formula from my first broken upload. A clean box has no opinions. It shows you exactly what a stranger on the internet would see, which is all that actually matters.
+
+Three — keep the tap and the bucket each in their own repo, even if it feels like two more repos to manage. Homebrew forces you to. Scoop does not, so I was tempted for a while to dump the Scoop manifest into the main CLI repo and save a repo. Glad I did not. Both of those repos are now boring, stable, and have not needed a single manual commit from me since the automation went in. That is exactly how I want it.
+
+The install section of the README now reads:
+
+```bash
+# Mac
+brew tap vineethkrishnan/ipwhoami && brew install ipwhoami
+
+# Windows
+scoop bucket add ipwhoami https://github.com/vineethkrishnan/scoop-ipwhoami
+scoop install ipwhoami
+
+# Anywhere
+npm i -g ipwhoami
+```
+
+Three lines instead of one. Same CLI under the hood. But now Mac and Windows users do not need to know what npm is to use a tool someone built for them. That small thing ended up mattering more than I thought it would.
+
+That is pretty much the packaging half of ipwhoami. The tap lives at [github.com/vineethkrishnan/homebrew-ipwhoami](https://github.com/vineethkrishnan/homebrew-ipwhoami), the bucket at [github.com/vineethkrishnan/scoop-ipwhoami](https://github.com/vineethkrishnan/scoop-ipwhoami), and the release workflow driving both is in the main [ipwhoami repo](https://github.com/vineethkrishnan/ipwhoami).
+
+Okay, that is enough from me for today. If any of this saved you some time, that is the whole point of writing it down. Until the next one — take it easy.
