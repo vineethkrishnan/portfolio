@@ -10,7 +10,7 @@ draft: false
 
 ![A developer at their desk watching a laptop screen show a completed database restore with a green checkmark, a large production-labelled tape reel beside the laptop and smaller test tapes in the background, flat editorial illustration, warm lighting.](/blog/backup-verify-hero.png)
 
-**TL;DR** — I had run dozens of test-backup restore drills and felt safe. What I had never done was pull a real production snapshot, decrypt it, and bring it up in a sandbox. The day I finally did, it worked — even a big database came back clean. `backup-verify` is the tiny Docker Compose lab I ran it through, and this post is half the story and half the tool.
+**TL;DR** — I had run dozens of test-backup restore drills and felt safe. What I had never done was pull a real production snapshot, decrypt it, and bring it up in a sandbox. The day I finally did, it worked — even a big database came back clean. This post is the story, plus the small Docker Compose file I keep on my laptop for exactly this kind of check. No repo, no project, just a compose file. Copy it if you want it.
 
 ## The cold little question
 
@@ -30,7 +30,7 @@ So that afternoon, I did.
 
 ## What actually happened
 
-I opened `backup-verify` — the throwaway Docker Compose lab I keep around exactly for this. Picked the Postgres profile. Pulled the latest production snapshot out of the storage box, decrypted it, dropped the `.dump` file into `~/Downloads`, and ran `pg_restore` from inside the container.
+I opened the throwaway Docker Compose folder I keep on my laptop exactly for this — I call it `backup-verify` because that is what I am doing, nothing fancier than that. Picked the Postgres profile. Pulled the latest production snapshot out of the storage box, decrypted it, dropped the `.dump` file into `~/Downloads`, and ran `pg_restore` from inside the container.
 
 And it just worked.
 
@@ -44,9 +44,9 @@ If you have been putting this off the way I was, tell me I am not the only one.
 
 Right. Now, the lab I ran it through.
 
-## backup-verify, the tool
+## The compose file
 
-`backup-verify` is not a service. There is no CLI, no scheduler, no diff engine. The whole project is a single `docker-compose.yml`, about 175 lines of it, and a `data/` folder it creates as it boots. That is it.
+This is not a service. There is no CLI, no scheduler, no diff engine. The whole thing is a single `docker-compose.yml`, about 175 lines of it, and a `data/` folder it creates as it boots. It lives in one folder on my laptop and has never been a repo. That is it.
 
 Seven database engines, each behind a Docker Compose profile, each paired with a companion admin UI:
 
@@ -85,7 +85,7 @@ Each profile is independent. `docker compose --profile postgres up -d` boots onl
 
 ## Two small choices that make me actually use it
 
-Two things in this file sound boring on paper but are the reason I open the repo instead of putting it off.
+Two things in this file sound boring on paper but are the reason I open the folder instead of putting it off.
 
 **`~/Downloads:/dumps:ro`** on every service.
 
@@ -105,7 +105,7 @@ Every one of these sits a digit or two away from the default. The reason is pett
 
 ## Why I still refuse to automate the verify step
 
-Every time I show someone this repo, the suggestion is the same: "Why don't you wrap it in a CLI that does the restore, counts rows, and reports?"
+Every time I show someone this compose file, the suggestion is the same: "Why don't you wrap it in a CLI that does the restore, counts rows, and reports?"
 
 I have thought about it. I am not going to, and the reason matters.
 
@@ -138,6 +138,6 @@ And `bacpac` support for MSSQL. The current setup handles `.bak` fine, but `bacp
 
 If you have a backup setup you trust, the honest question is whether "trust" is built on a test drill or on a real restore. If it is the drill, go pull a real snapshot tonight. Not next quarter, not next incident review — tonight. Boot a throwaway database. Put eyes on a table you know by heart. If the rows are where you expect, that is a feeling worth having. If they are not, you have caught it on your terms instead of the worst possible day.
 
-The compose file is small enough that copying it into your own dotfiles takes five minutes. It is at [github.com/vineethkrishnan/backup-verify](https://github.com/vineethkrishnan/backup-verify) if you want the version I actually use.
+There is no repo for this one. `backup-verify` is just a folder on my laptop with the compose file above in it and a `.gitignored` `data/` directory it writes to. It is not going to become a published project — the moment it grows a README, someone will file an issue, and then it stops being the thing I can delete without guilt when it breaks. The snippet in this post is the whole thing. Copy it, change the ports that collide with yours, drop the engines you will never restore, and you are done.
 
 Not going to pretend this was a perfect writeup. But if even one part of it nudges someone to finally open a backup they have been politely ignoring, then it was worth putting down. See you in the next one.
