@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.20](https://github.com/vineethkrishnan/portfolio/compare/v0.0.19...v0.0.20) (2026-04-21)
+
+
+### Documentation
+
+* **blog:** drop repo references in backup-verify post ([#36](https://github.com/vineethkrishnan/portfolio/issues/36)) ([d8ceb45](https://github.com/vineethkrishnan/portfolio/commit/d8ceb454e0989d601e4c872d25fb81e3fa9037a2))
+
 ## [0.0.19](https://github.com/vineethkrishnan/portfolio/compare/v0.0.18...v0.0.19) (2026-04-21)
 
 
