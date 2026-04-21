@@ -1,0 +1,143 @@
+---
+title: "The day I realised I had never tested a production backup"
+description: "I had been running test-backup drills for months and felt covered. But I had never pulled a real production snapshot into a lab and restored it. The afternoon I finally did is the story behind this post."
+pubDate: 2026-04-21
+tags: ["backup", "docker-compose", "databases", "ops", "open-source"]
+draft: false
+---
+
+# The day I realised I had never tested a production backup
+
+![A developer at their desk watching a laptop screen show a completed database restore with a green checkmark, a large production-labelled tape reel beside the laptop and smaller test tapes in the background, flat editorial illustration, warm lighting.](/blog/backup-verify-hero.png)
+
+**TL;DR** — I had run dozens of test-backup restore drills and felt safe. What I had never done was pull a real production snapshot, decrypt it, and bring it up in a sandbox. The day I finally did, it worked — even a big database came back clean. `backup-verify` is the tiny Docker Compose lab I ran it through, and this post is half the story and half the tool.
+
+## The cold little question
+
+So there I was, one afternoon, coffee going cold, staring at my own Hetzner Storage Box.
+
+Neat folders. Neat snapshots. A long green column of audit rows. Every cron had fired, every upload had a size, every week had a tick.
+
+And a question at the back of my head that I had been avoiding for longer than I want to admit: *have I ever actually restored a real one of these?*
+
+The honest answer was no. Not properly.
+
+I want to be fair to myself here, because I had not been careless. Every new engine I added to my backup tool came with its own test drill — spin up a throwaway database, seed it with some rows, take a backup, bring it back up somewhere else, confirm the rows are there. I had run those drills many, many times. Every time I touched the audit layer I reran them. Every time I changed an adapter. I genuinely felt covered.
+
+But test drills and a real production restore are not the same thing, and part of me knew it. The seed database is five megabytes. The real one is tens of gigabytes, schema-migrated across versions, touched by years of application code, full of columns I had not thought about in a long time. Some classes of problem only show up at that scale. And at some point you have to stop quietly trusting your drills and go pull the real snapshot.
+
+So that afternoon, I did.
+
+## What actually happened
+
+I opened `backup-verify` — the throwaway Docker Compose lab I keep around exactly for this. Picked the Postgres profile. Pulled the latest production snapshot out of the storage box, decrypted it, dropped the `.dump` file into `~/Downloads`, and ran `pg_restore` from inside the container.
+
+And it just worked.
+
+The whole database came back clean. Every schema, every foreign key, every `bytea` column, every ancient `jsonb` field I had half-expected to be the thing that blew up. I opened pgAdmin, clicked around, pulled up a user I had onboarded earlier that week, checked their orders, checked their uploads, checked the payment rows — all of it, all readable, all in the shape the application expects.
+
+I sat back for a minute. That was a good minute.
+
+There is a particular quiet pride in watching a pipeline you built yourself — that you had only ever proven on tiny test data — land an actual production-sized restore on the first try. The drills had been telling me *the tool was correct*. This run told me *the backups themselves are correct*. Two different claims. I had been conflating them for months. Today they both turned out to be true, but that could very easily have gone the other way, and I would have found out at the worst possible time.
+
+If you have been putting this off the way I was, tell me I am not the only one.
+
+Right. Now, the lab I ran it through.
+
+## backup-verify, the tool
+
+`backup-verify` is not a service. There is no CLI, no scheduler, no diff engine. The whole project is a single `docker-compose.yml`, about 175 lines of it, and a `data/` folder it creates as it boots. That is it.
+
+Seven database engines, each behind a Docker Compose profile, each paired with a companion admin UI:
+
+```yaml
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: verify
+    ports: ["55432:5432"]
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ~/Downloads:/dumps:ro
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    profiles: ["postgres"]
+    ports: ["5050:80"]
+    depends_on: [postgres]
+```
+
+That block, six more times, for:
+
+- **postgres** with pgAdmin
+- **mysql** with phpMyAdmin
+- **mariadb** with its own phpMyAdmin (yes, separate — MariaDB has its own quirks)
+- **mongo** with Mongo Express
+- **redis** with Redis Commander
+- **mssql** with Adminer
+- **elasticsearch** with Kibana
+
+Each profile is independent. `docker compose --profile postgres up -d` boots only Postgres and pgAdmin. `--profile mongo` boots only Mongo and Mongo Express. You never spin up the whole zoo at once, because you almost never need to.
+
+## Two small choices that make me actually use it
+
+Two things in this file sound boring on paper but are the reason I open the repo instead of putting it off.
+
+**`~/Downloads:/dumps:ro`** on every service.
+
+The workflow collapses to this: pull the snapshot out of the storage box, let the `.sql` or `.dump` or `.bson` land in `~/Downloads` like any other file, and inside the container it is already sitting at `/dumps/myapp.dump`, ready to feed into `pg_restore` or `mysql` or `mongorestore`. No `docker cp`. No volume gymnastics. No temp folders. The read-only flag is there so I cannot accidentally scribble junk back into my Downloads folder from inside a container.
+
+**Weird port numbers, on purpose.**
+
+- Postgres → `55432`
+- MySQL → `33306`
+- MariaDB → `33307`
+- Mongo → `37017`
+- Redis → `56379`
+- MSSQL → `11433`
+- Elasticsearch → `19200`
+
+Every one of these sits a digit or two away from the default. The reason is petty but load-bearing. I run a real Postgres on `5432` for other projects. I do not want the verify lab colliding with it, ever. Ten minutes of picking weird ports on the day I built this have saved me from "wait, which database am I actually connected to right now" more times than I would like to admit.
+
+## Why I still refuse to automate the verify step
+
+Every time I show someone this repo, the suggestion is the same: "Why don't you wrap it in a CLI that does the restore, counts rows, and reports?"
+
+I have thought about it. I am not going to, and the reason matters.
+
+The compose file works *because* it forces me to open an admin UI and scroll. The moment I replace scrolling with row-count assertions, I will start getting green ticks on the day the backup is silently wrong. A checksum says the bytes match. A row count says the count matches. Neither of those says the `orders.status` enum still decodes correctly, or that a `bytea` column came back as a string, or that a timestamp came back in UTC when the application wants it in IST. Those are the problems you catch by putting human eyes on the data.
+
+There is a clean split in this system I want to protect. The *making* of backups is automated, scheduled, audited, alerted, and I trust it. The *checking* of backups is manual, slow, and not my favourite way to spend a Sunday morning. That is correct. Verification is a ritual, not a job. If I automate it away, I will lose the one thing that actually makes me look.
+
+## The UIs are hilarious in aggregate
+
+A small appreciation, because these tools are a time capsule of twenty years of database tooling:
+
+- **pgAdmin** is the serious one. Loads slowly, does everything, is the reason I keep using Postgres.
+- **phpMyAdmin** is twenty years of PHP in a trench coat, and somehow still the fastest way to eyeball a MySQL dump. I do not know how. I have stopped asking.
+- **Mongo Express** is sparse but it does its one job.
+- **Redis Commander** is what I use to remember whether a cached key is JSON or a raw string.
+- **Adminer** is the single-file PHP hero of my generation, now driving my MSSQL tab because Microsoft's own tooling refuses to make this easier.
+- **Kibana** is absurd overkill for "did the Elasticsearch restore work", but when the only dump you have is an ES snapshot, you use what the ecosystem hands you.
+
+All of them are pinned to `latest`, because this is not production. If any of them break after a version bump, I delete `./data` and move on. That is a luxury the rest of my infrastructure does not get.
+
+## What I would still add
+
+Two small items on the list, nothing structural.
+
+A helper script for Redis, because restoring an `.rdb` snapshot is the one place where "drop the file into `/dumps` and import it" is not quite enough — you have to stop the container, replace `dump.rdb` at the right path, fix permissions, and restart. Every other engine is a one-liner. Redis is the awkward cousin at the dinner table, and I keep re-googling the procedure.
+
+And `bacpac` support for MSSQL. The current setup handles `.bak` fine, but `bacpac` has bitten people I know, and I do not want to be fighting `sqlpackage` on the day a client actually needs their data back.
+
+## Go do the boring thing
+
+If you have a backup setup you trust, the honest question is whether "trust" is built on a test drill or on a real restore. If it is the drill, go pull a real snapshot tonight. Not next quarter, not next incident review — tonight. Boot a throwaway database. Put eyes on a table you know by heart. If the rows are where you expect, that is a feeling worth having. If they are not, you have caught it on your terms instead of the worst possible day.
+
+The compose file is small enough that copying it into your own dotfiles takes five minutes. It is at [github.com/vineethkrishnan/backup-verify](https://github.com/vineethkrishnan/backup-verify) if you want the version I actually use.
+
+Not going to pretend this was a perfect writeup. But if even one part of it nudges someone to finally open a backup they have been politely ignoring, then it was worth putting down. See you in the next one.
