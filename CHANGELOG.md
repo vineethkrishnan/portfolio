@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.19](https://github.com/vineethkrishnan/portfolio/compare/v0.0.18...v0.0.19) (2026-04-21)
+
+
+### Documentation
+
+* **blog:** add backup-verify story post ([#34](https://github.com/vineethkrishnan/portfolio/issues/34)) ([d90be2a](https://github.com/vineethkrishnan/portfolio/commit/d90be2a94d561cddde6bb3abb65599d063c01408))
+
 ## [0.0.18](https://github.com/vineethkrishnan/portfolio/compare/v0.0.17...v0.0.18) (2026-04-20)
 
 

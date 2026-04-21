@@ -1,7 +1,7 @@
 {
   "name": "portfolio",
   "type": "module",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "engines": {
     "node": ">=22.12.0"
   },
