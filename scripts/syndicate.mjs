@@ -149,22 +149,35 @@ async function devtoUpsert({ existingId, title, description, bodyMarkdown, canon
   const endpoint = existingId ? `https://dev.to/api/articles/${existingId}` : 'https://dev.to/api/articles';
   const method = existingId ? 'PUT' : 'POST';
 
-  const response = await fetch(endpoint, {
-    method,
-    headers: {
-      'api-key': DEVTO_API_KEY,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
+  // dev.to's POST rate limit is aggressive (especially for brand-new articles).
+  // Retry up to 3 times on 429, honouring Retry-After when provided.
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method,
+      headers: {
+        'api-key': DEVTO_API_KEY,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
 
-  const text = await response.text();
-  if (!response.ok) {
+    if (response.ok) {
+      const json = JSON.parse(text);
+      return { id: json.id, url: json.url };
+    }
+
+    if (response.status === 429 && attempt < 4) {
+      const retryAfter = Number(response.headers.get('retry-after')) || 35;
+      console.log(`    dev.to 429 — waiting ${retryAfter}s (attempt ${attempt}/3)`);
+      await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+      continue;
+    }
+
     throw new Error(`dev.to ${method} failed (${response.status}): ${text}`);
   }
-  const json = JSON.parse(text);
-  return { id: json.id, url: json.url };
+  throw new Error('dev.to upsert exhausted retries');
 }
 
 // ---------------------------------------------------------------------------
@@ -352,9 +365,10 @@ async function main() {
       continue;
     }
 
-    // Pace dev.to writes to stay under the ~30/30s rate limit.
+    // Pace dev.to writes. Creating new articles is rate-limited more aggressively
+    // than updating, so we stay conservative and rely on in-request retry for spikes.
     if (!DRY_RUN && !firstWrite) {
-      await new Promise((resolve) => setTimeout(resolve, 6000));
+      await new Promise((resolve) => setTimeout(resolve, 10000));
     }
     firstWrite = false;
 
