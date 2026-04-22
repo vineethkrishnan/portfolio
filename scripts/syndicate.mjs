@@ -196,6 +196,43 @@ async function hashnodeResolvePublicationId() {
   return data.publication.id;
 }
 
+// ---------------------------------------------------------------------------
+// Reconciliation — match already-published posts on each platform by canonical URL
+// ---------------------------------------------------------------------------
+
+async function fetchDevtoArticles() {
+  const articles = [];
+  let page = 1;
+  while (true) {
+    const response = await fetch(`https://dev.to/api/articles/me/all?per_page=50&page=${page}`, {
+      headers: { 'api-key': DEVTO_API_KEY, accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`dev.to list failed (${response.status}): ${await response.text()}`);
+    const batch = await response.json();
+    articles.push(...batch);
+    if (batch.length < 50) break;
+    page += 1;
+  }
+  return articles;
+}
+
+async function fetchHashnodePosts(publicationId) {
+  const query = `query PublicationPosts($id: ObjectId!) {
+    publication(id: $id) {
+      posts(first: 50) {
+        edges { node { id title url slug } }
+      }
+    }
+  }`;
+  const data = await hashnodeGraphQL(query, { id: publicationId });
+  return (data?.publication?.posts?.edges ?? []).map((edge) => edge.node);
+}
+
+function slugFromCanonical(canonicalUrl) {
+  const match = canonicalUrl.match(/\/blog\/([^/]+)\/?$/);
+  return match ? match[1] : null;
+}
+
 async function hashnodeUpsert({ existingId, publicationId, title, bodyMarkdown, canonicalUrl, heroImage, tags }) {
   const tagInputs = hashnodeTags(tags);
 
@@ -260,6 +297,39 @@ async function main() {
 
   const publicationId = await hashnodeResolvePublicationId();
 
+  // Reconcile state with what's already on each platform, matched by the
+  // portfolio canonical URL. Prevents duplicate creation when a prior run
+  // published posts but crashed before committing state back.
+  if (!DRY_RUN) {
+    const devtoExisting = await fetchDevtoArticles();
+    const hashnodeExisting = await fetchHashnodePosts(publicationId);
+    let reconciled = 0;
+
+    for (const article of devtoExisting) {
+      const slug = slugFromCanonical(article.canonical_url ?? '');
+      if (!slug) continue;
+      const entry = (state.posts[slug] ??= {});
+      if (!entry.devto) {
+        entry.devto = { id: article.id, url: article.url };
+        reconciled += 1;
+      }
+    }
+    for (const post of hashnodeExisting) {
+      const slug = post.slug;
+      if (!slug || !state.posts[slug]) continue;
+      const entry = state.posts[slug];
+      if (!entry.hashnode) {
+        entry.hashnode = { id: post.id, url: post.url };
+        reconciled += 1;
+      }
+    }
+    if (reconciled > 0) {
+      console.log(`Reconciled ${reconciled} existing platform entries into state.`);
+    }
+  }
+
+  let wroteAny = false;
+  let firstWrite = true;
   for (const path of posts) {
     const slug = basename(path, '.mdx');
     const source = await readFile(path, 'utf8');
@@ -281,6 +351,12 @@ async function main() {
       console.log(`- ${slug}: unchanged (${hash})`);
       continue;
     }
+
+    // Pace dev.to writes to stay under the ~30/30s rate limit.
+    if (!DRY_RUN && !firstWrite) {
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+    }
+    firstWrite = false;
 
     console.log(`- ${slug}: syndicating`);
 
@@ -314,14 +390,17 @@ async function main() {
         hashnode: { id: hashnode.id, url: hashnode.url },
         syndicatedAt: new Date().toISOString(),
       };
+      state.updatedAt = new Date().toISOString();
+      await writeFile(STATE_FILE, JSON.stringify(state, null, 2) + '\n');
+      wroteAny = true;
     }
   }
 
-  if (!DRY_RUN) {
+  if (!DRY_RUN && !wroteAny) {
     state.updatedAt = new Date().toISOString();
     await writeFile(STATE_FILE, JSON.stringify(state, null, 2) + '\n');
-    console.log(`State written to ${STATE_FILE}`);
   }
+  if (!DRY_RUN) console.log(`State written to ${STATE_FILE}`);
 }
 
 main().catch((error) => {
