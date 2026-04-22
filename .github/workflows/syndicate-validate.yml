@@ -1,6 +1,9 @@
 name: Validate Syndication Credentials
 
 on:
+  push:
+    branches: [chore/blog-syndication]
+    paths: ['.github/workflows/syndicate-validate.yml']
   workflow_dispatch:
 
 jobs:
