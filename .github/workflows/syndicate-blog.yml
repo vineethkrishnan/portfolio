@@ -1,0 +1,64 @@
+name: Syndicate Blog
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/content/blog/**.mdx']
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: 'Re-syndicate ALL non-draft posts (ignores content hash)'
+        type: boolean
+        default: false
+      slug:
+        description: 'Syndicate a single slug (filename without .mdx)'
+        type: string
+        default: ''
+      dry_run:
+        description: 'Parse and validate, but do not publish'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  syndicate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run syndication
+        env:
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY }}
+          HASHNODE_PAT: ${{ secrets.HASHNODE_PAT }}
+          HASHNODE_PUBLICATION_HOST: ${{ secrets.HASHNODE_PUBLICATION_HOST }}
+          SITE_URL: https://vineethnk.in
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          BACKFILL: ${{ inputs.backfill || false }}
+          SLUG: ${{ inputs.slug || '' }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_EVENT_AFTER: ${{ github.event.after }}
+        run: node scripts/syndicate.mjs
+
+      - name: Commit state changes
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet .syndication.json 2>/dev/null; then
+            echo "No state changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .syndication.json
+          git commit -m "chore(syndication): update state [skip ci]"
+          git push
