@@ -1,0 +1,72 @@
+name: Validate Syndication Credentials
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check dev.to API key
+        env:
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEVTO_API_KEY:-}" ]; then
+            echo "::error::DEVTO_API_KEY secret is empty"
+            exit 1
+          fi
+          status=$(curl -sS -o /tmp/devto.json -w "%{http_code}" \
+            -H "api-key: $DEVTO_API_KEY" \
+            https://dev.to/api/articles/me)
+          echo "dev.to HTTP $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::dev.to auth failed"
+            cat /tmp/devto.json
+            exit 1
+          fi
+          count=$(jq 'length' /tmp/devto.json)
+          echo "dev.to OK — account reachable, existing articles: $count"
+
+      - name: Check Hashnode PAT and resolve publication ID
+        env:
+          HASHNODE_PAT: ${{ secrets.HASHNODE_PAT }}
+          HASHNODE_PUBLICATION_HOST: ${{ secrets.HASHNODE_PUBLICATION_HOST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HASHNODE_PAT:-}" ]; then
+            echo "::error::HASHNODE_PAT secret is empty"
+            exit 1
+          fi
+          if [ -z "${HASHNODE_PUBLICATION_HOST:-}" ]; then
+            echo "::error::HASHNODE_PUBLICATION_HOST secret is empty"
+            exit 1
+          fi
+
+          me_query='{"query":"query { me { id username } }"}'
+          me_resp=$(curl -sS \
+            -H "Authorization: $HASHNODE_PAT" \
+            -H "Content-Type: application/json" \
+            -d "$me_query" \
+            https://gql.hashnode.com/)
+          username=$(echo "$me_resp" | jq -r '.data.me.username // empty')
+          if [ -z "$username" ]; then
+            echo "::error::Hashnode auth failed: $me_resp"
+            exit 1
+          fi
+          echo "Hashnode OK - authenticated as: $username"
+
+          pub_query=$(jq -n --arg host "$HASHNODE_PUBLICATION_HOST" \
+            '{query: "query Publication($host: String!) { publication(host: $host) { id title url } }", variables: {host: $host}}')
+          pub_resp=$(curl -sS \
+            -H "Authorization: $HASHNODE_PAT" \
+            -H "Content-Type: application/json" \
+            -d "$pub_query" \
+            https://gql.hashnode.com/)
+          pub_id=$(echo "$pub_resp" | jq -r '.data.publication.id // empty')
+          pub_title=$(echo "$pub_resp" | jq -r '.data.publication.title // empty')
+          if [ -z "$pub_id" ]; then
+            echo "::error::Could not resolve publication for host: $pub_resp"
+            exit 1
+          fi
+          echo "Publication OK - id=$pub_id, title=$pub_title"
