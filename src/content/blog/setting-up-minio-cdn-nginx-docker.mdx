@@ -1,0 +1,323 @@
+---
+title: "Setting Up a MinIO CDN with Nginx Reverse Proxy on Docker"
+description: "A practical walkthrough for self-hosting an S3-compatible CDN with MinIO, Docker Compose, and Nginx - including the small config bits everyone seems to miss until presigned URLs start failing."
+pubDate: 2026-04-22
+tags: ["minio", "nginx", "docker", "self-hosting", "devops"]
+draft: false
+---
+
+# Setting Up a MinIO CDN with Nginx Reverse Proxy on Docker
+
+![Isometric diagram of a client laptop connecting through an Nginx reverse proxy to a MinIO storage container, arrows showing HTTPS flow, technical illustration in blue and orange.](/blog/minio-cdn-nginx-hero.png)
+
+**TL;DR** - You can run your own S3-compatible CDN on a single small server with MinIO, Nginx, and a free Let's Encrypt cert. The setup is straightforward. The only places that usually bite people are the Host header, body size limits, and buffering. Get those three right and the whole thing just works.
+
+## Why bother self-hosting a CDN?
+
+AWS S3 plus CloudFront is great when someone else is paying the bill. For side projects, staging environments, or small production apps where you already have a VPS sitting around, a MinIO instance behind Nginx gives you the same S3 API with your own SSL, your own data, and a bill that does not surprise you at the end of the month. You also get full control - no region lock-in, no egress fees that scale faster than your traffic.
+
+## What we are building
+
+Three boxes, one arrow each way:
+
+- **Client** makes a request to `cdn.example.com` over HTTPS
+- **Nginx** (port 443, SSL) terminates TLS and forwards the request
+- **MinIO container** (port 9000, localhost only) does the actual storage work
+
+MinIO is never exposed to the public internet directly. Nginx is the only thing the outside world sees. We will point a subdomain like `cdn.example.com` at this whole setup.
+
+## Prerequisites
+
+Before starting, make sure you have:
+
+- An Ubuntu or Debian server (anything recent, 22.04 LTS is fine)
+- Docker and Docker Compose installed
+- A domain with a DNS A record pointing to your server's IP
+- Ports 80 and 443 open on your firewall
+- Some idea of what a reverse proxy does (since you are here, I will assume yes)
+
+Right. Let us get into it.
+
+## Step 1: Run MinIO with Docker Compose
+
+Create a folder somewhere sensible - I usually go with `/opt/minio` - and drop this in as `docker-compose.yml`:
+
+```yaml
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_SERVER_URL: https://cdn.example.com
+      MINIO_BROWSER_REDIRECT_URL: https://cdn.example.com/console
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+A few things worth calling out here.
+
+The `127.0.0.1:` prefix on the port mapping is the important bit. Without it, Docker binds to `0.0.0.0` and MinIO ends up open to the whole internet. With it, only processes on the host machine can talk to those ports - which is exactly what we want, since Nginx is going to be the front door.
+
+The `MINIO_SERVER_URL` tells MinIO what its public URL is. This matters for presigned URLs - MinIO needs to know what hostname to sign against, otherwise you get signature mismatches when clients try to use the URL.
+
+The healthcheck is basic but enough. MinIO has a built-in liveness endpoint, and Docker will mark the container unhealthy if it stops responding.
+
+Drop your credentials in a `.env` file next to the compose file:
+
+```bash
+MINIO_ROOT_USER=admin
+MINIO_ROOT_PASSWORD=please-change-this-to-something-long-and-random
+```
+
+Then bring it up:
+
+```bash
+docker compose up -d
+docker compose logs -f minio
+```
+
+You should see MinIO reporting healthy. If you `curl http://127.0.0.1:9000/minio/health/live` from the host, you should get a 200. So far so good.
+
+## Step 2: Configure Nginx as a reverse proxy
+
+This is the part where most tutorials hand-wave. Do not skip the details here - the defaults are wrong for MinIO in a few specific ways.
+
+Drop this into `/etc/nginx/sites-available/cdn.example.com`:
+
+```nginx
+# Redirect plain HTTP to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name cdn.example.com;
+    return 301 https://$host$request_uri;
+}
+
+# The main SSL block
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name cdn.example.com;
+
+    # Certbot will fill these in for you in Step 3
+    # ssl_certificate     /etc/letsencrypt/live/cdn.example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/cdn.example.com/privkey.pem;
+
+    # Allow large uploads
+    client_max_body_size 5G;
+
+    # Do not buffer - MinIO streams, and buffering breaks large transfers
+    proxy_buffering off;
+    proxy_request_buffering off;
+
+    # Stop Nginx from chunking responses that are already fine
+    chunked_transfer_encoding off;
+
+    # Timeouts that make sense for big files
+    proxy_connect_timeout 300;
+    proxy_send_timeout 300;
+    proxy_read_timeout 300;
+    send_timeout 300;
+
+    location / {
+        proxy_pass http://127.0.0.1:9000;
+
+        # These headers are the difference between working and "SignatureDoesNotMatch"
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+}
+```
+
+Now the why, because this is where I lost time the first time I did this.
+
+**`client_max_body_size 5G`** - Nginx defaults to 1MB. One megabyte. If anyone tries to upload a 20MB image, Nginx rejects it before MinIO even sees the request, and the error message is unhelpful. Set this to whatever your biggest expected file is, plus some headroom.
+
+**`proxy_buffering off` and `proxy_request_buffering off`** - by default Nginx buffers the whole request before passing it upstream. For a multi-gigabyte upload, that means Nginx writes the file to its own temp folder first, then sends it to MinIO. You pay twice in disk IO and you might run out of `/tmp` space. Turning buffering off makes Nginx stream the request straight through, which is how S3-compatible clients expect things to work anyway.
+
+**`proxy_set_header Host $host`** - this is the one everyone forgets. S3 signatures are computed over a canonical request that includes the Host header. If the client signed the request against `cdn.example.com` but Nginx forwards it with `Host: 127.0.0.1:9000`, the signature MinIO computes will not match the one the client sent, and you will get `SignatureDoesNotMatch` errors that make no sense.
+
+**`chunked_transfer_encoding off`** - MinIO already handles its own transfer encoding. Letting Nginx add another layer on top causes intermittent breakage with larger files, especially when clients use multipart uploads.
+
+**Timeouts** - default Nginx timeouts are measured for serving HTML, not for pushing gigabyte files around. Bump them up.
+
+Enable the site and reload Nginx:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/cdn.example.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+If you have been down the "why is my presigned URL failing" rabbit hole before, you know the pain.
+
+## Step 3: Get an SSL certificate with Certbot
+
+Let's Encrypt makes this painless. Install Certbot:
+
+```bash
+sudo apt update
+sudo apt install -y certbot python3-certbot-nginx
+```
+
+Then issue the cert. The `--nginx` plugin will edit your Nginx config automatically and uncomment the SSL lines we left commented out above:
+
+```bash
+sudo certbot --nginx -d cdn.example.com
+```
+
+Follow the prompts, say yes to the HTTPS redirect (we already have one, but Certbot is smart enough to not duplicate). Certbot sets up a systemd timer for auto-renewal. Check it works with:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+If that comes back clean, you are set - renewal will happen on its own every 60 days.
+
+## Step 4: Create a bucket and test
+
+The MinIO console runs on port 9001, but we bound it to localhost. So you have two ways to reach it.
+
+**Option A - SSH tunnel:**
+
+```bash
+ssh -L 9001:127.0.0.1:9001 you@your-server
+```
+
+Then open `http://localhost:9001` in your browser. Log in with the root credentials from your `.env` file.
+
+**Option B - separate subdomain** like `console.cdn.example.com` with its own Nginx block pointing to `127.0.0.1:9001`. Do this if you access the console often. For a one-off bucket setup the tunnel is fine.
+
+Inside the console, create a bucket - call it `public-assets` for this example. Then go to the bucket's Anonymous Access tab and add a rule allowing `GetObject` on `public-assets/*` for anonymous users. That makes it a public read bucket.
+
+You can also do this from the `mc` CLI, which is usually faster:
+
+```bash
+# Install mc (MinIO client)
+brew install minio/stable/mc   # or the appropriate install for your OS
+
+# Configure it to point at your CDN
+mc alias set cdn https://cdn.example.com admin your-password
+
+# Make a bucket and set it public
+mc mb cdn/public-assets
+mc anonymous set download cdn/public-assets
+
+# Upload a test file
+mc cp ~/Downloads/test.jpg cdn/public-assets/
+```
+
+And now the moment of truth:
+
+```bash
+curl -I https://cdn.example.com/public-assets/test.jpg
+```
+
+You should get `HTTP/2 200` back with proper content-type headers. If you do, congratulations - you have a working CDN.
+
+If you do not, jump to the gotchas section below.
+
+## Step 5: Using it as a CDN from your app
+
+Here is what actually using this looks like from a Node.js app. Install the AWS SDK:
+
+```bash
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+```
+
+Then a minimal setup:
+
+```javascript
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+// point the SDK at your MinIO
+const s3 = new S3Client({
+  endpoint: "https://cdn.example.com",
+  region: "us-east-1", // MinIO ignores this but the SDK insists
+  credentials: {
+    accessKeyId: process.env.MINIO_ACCESS_KEY,
+    secretAccessKey: process.env.MINIO_SECRET_KEY,
+  },
+  forcePathStyle: true, // important - MinIO uses path-style, not virtual-host style
+});
+
+// upload a file
+async function uploadFile(key, body, contentType) {
+  await s3.send(new PutObjectCommand({
+    Bucket: "public-assets",
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  }));
+  return `https://cdn.example.com/public-assets/${key}`;
+}
+
+// generate a short-lived URL the browser can upload to directly
+async function getUploadUrl(key, contentType) {
+  const command = new PutObjectCommand({
+    Bucket: "public-assets",
+    Key: key,
+    ContentType: contentType,
+  });
+  return await getSignedUrl(s3, command, { expiresIn: 900 }); // valid for 15 minutes
+}
+```
+
+The `forcePathStyle: true` line is non-negotiable. MinIO serves buckets at `/bucket-name/` paths, not as `bucket-name.cdn.example.com` subdomains. Leave that off and everything breaks in weird ways.
+
+Presigned URLs are the pattern you want for browser uploads. The server signs the URL, hands it to the client, and the browser uploads directly to MinIO without the file ever passing through your app server. Saves you bandwidth and a lot of memory.
+
+## Common gotchas
+
+I have hit all of these at least once. Saving you the time.
+
+**`SignatureDoesNotMatch` on presigned URLs.** Ninety percent of the time this is the Host header. Make sure Nginx is forwarding `Host: cdn.example.com` and that `MINIO_SERVER_URL` in the compose file matches exactly. Mismatch between what the client signs and what MinIO computes equals failed signatures, every single time.
+
+**Large uploads failing at around 1MB or 10MB.** That is Nginx's `client_max_body_size`. Bump it up. If uploads fail at bigger sizes (say 100MB+), check `proxy_request_buffering` is off - without that, Nginx buffers the whole thing and may run out of disk or hit `proxy_max_temp_file_size`.
+
+**Browser uploads failing with CORS errors.** MinIO does not send CORS headers by default. Set them on the bucket:
+
+```bash
+mc anonymous set download cdn/public-assets
+mc cors set cdn/public-assets cors.json
+```
+
+Where `cors.json` looks something like:
+
+```json
+{
+  "CORSRules": [{
+    "AllowedOrigins": ["https://your-app.com"],
+    "AllowedMethods": ["GET", "PUT", "POST"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }]
+}
+```
+
+**Do not expose port 9000 to the public.** I mean it. MinIO on its own, without TLS, without a firewall, is not something you want on the open internet. Someone finds the admin password, your bucket is their bucket now. The whole reason we bound it to `127.0.0.1` in the compose file is to force all traffic through Nginx, which is the layer that actually has TLS, rate limiting, and logging. Keep it that way.
+
+## Wrap-up
+
+This setup is solid for staging and small-to-medium production workloads - I have run it under real traffic without drama. If you are pushing heavy traffic, put Cloudflare in front of Nginx for the edge caching, or look at MinIO's distributed mode across multiple nodes. For most of us though, a single box with Nginx and MinIO is more than enough and costs roughly what a decent lunch does per month.
+
+So that is where I will stop. If you have a different way of doing this, or hit a gotcha I missed, I genuinely want to hear it - drop me a note. Otherwise, see you when the next interesting problem shows up.
