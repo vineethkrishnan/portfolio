@@ -20,29 +20,28 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   syndicate:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate GitHub App token
-        uses: actions/create-github-app-token@v1
-        id: app-token
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
-          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Restore syndication state cache
+        uses: actions/cache@v4
+        with:
+          path: .syndication.json
+          key: syndication-state-v1-${{ github.run_id }}
+          restore-keys: syndication-state-v1-
 
       - name: Run syndication
         env:
@@ -56,17 +55,3 @@ jobs:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
           GITHUB_EVENT_AFTER: ${{ github.event.after }}
         run: node scripts/syndicate.mjs
-
-      - name: Commit state changes
-        if: ${{ always() && !inputs.dry_run }}
-        run: |
-          set -euo pipefail
-          if git diff --quiet .syndication.json 2>/dev/null; then
-            echo "No state changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .syndication.json
-          git commit -m "chore(blog): update syndication state [skip ci]"
-          git push
