@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.21](https://github.com/vineethkrishnan/portfolio/compare/v0.0.20...v0.0.21) (2026-04-22)
+
+
+### Documentation
+
+* **blog:** add minio cdn with nginx tutorial post ([#38](https://github.com/vineethkrishnan/portfolio/issues/38)) ([7644015](https://github.com/vineethkrishnan/portfolio/commit/76440157c722e75eb3bd19b4b58a7f4f909d1b0a))
+
 ## [0.0.20](https://github.com/vineethkrishnan/portfolio/compare/v0.0.19...v0.0.20) (2026-04-21)
 
 
