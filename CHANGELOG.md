@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.22](https://github.com/vineethkrishnan/portfolio/compare/v0.0.21...v0.0.22) (2026-04-23)
+
+
+### Features
+
+* **blog:** add docker port convention suffix vs prefix post ([149d73a](https://github.com/vineethkrishnan/portfolio/commit/149d73a57bbde18daf09cc08f9323f6256f6bc72))
+* **blog:** syndicate posts to dev.to and Hashnode ([#41](https://github.com/vineethkrishnan/portfolio/issues/41)) ([9ef2c6b](https://github.com/vineethkrishnan/portfolio/commit/9ef2c6bf02b3142cb55fe23bc6ac3be2f4f51b0f))
+
+
+### Bug Fixes
+
+* **blog:** make syndication resilient to partial failures ([#43](https://github.com/vineethkrishnan/portfolio/issues/43)) ([af9e389](https://github.com/vineethkrishnan/portfolio/commit/af9e38901bd63cae551f23df21c1f957fdfbce84))
+* **blog:** retry dev.to 429s and push state via GitHub App ([#44](https://github.com/vineethkrishnan/portfolio/issues/44)) ([d1ca902](https://github.com/vineethkrishnan/portfolio/commit/d1ca90250472258b3aac4f450124f6f48f9b5195))
+
 ## [0.0.21](https://github.com/vineethkrishnan/portfolio/compare/v0.0.20...v0.0.21) (2026-04-22)
 
 
