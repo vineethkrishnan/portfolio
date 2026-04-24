@@ -10,9 +10,9 @@ draft: false
 
 ![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero.png)
 
-> **TL;DR:** A suffix convention for Docker host ports (`3306 -> 33063`) looks clean until the result goes over 65535 and Docker refuses to start. Prefix (`3306 -> 33306`) keeps the math in bounds for almost every common dev port. And if you do not want to bake any of this into the repo, a gitignored `docker-compose.override.yml` is still the simplest answer.
+> **TL;DR:** A suffix convention for Docker host ports (`5432 -> 54323`) looks clean until the result goes over 65535 and Docker refuses to start. Prefix (`5432 -> 35432`) keeps the math in bounds for almost every common dev port. And if you do not want to bake any of this into the repo, a gitignored `docker-compose.override.yml` is still the simplest answer.
 
-In the daily the other day, a colleague flagged something that had clearly been eating at them. Multiple Docker projects on the same laptop kept stepping on each other's ports. You bring one stack up, another one refuses to start because `3306` or `8080` is already taken. You go stop the first stack. You forget you needed it. Same loop, different day.
+In the daily the other day, a colleague flagged something that had clearly been eating at them. Multiple Docker projects on the same laptop kept stepping on each other's ports. You bring one stack up, another one refuses to start because `5432` or `8080` is already taken. You go stop the first stack. You forget you needed it. Same loop, different day.
 
 I sat there quietly because I had not run into this problem for a long time.
 
@@ -31,7 +31,7 @@ services:
       - "380:80"
   db:
     ports:
-      - "33306:3306"
+      - "35432:5432"
   mailhog:
     ports:
       - "38025:8025"
@@ -46,21 +46,21 @@ So the discussion turned into: if we are going to bake it into the repo, how do 
 
 ## The suffix idea wins the vote
 
-Someone proposed stamping each project with a single digit and appending it to the host port. If the project tag is `3`, MySQL on `3306` becomes `33063`. Postgres on `5432` becomes `54323`. Clean on paper. Original port is visible at the start, project tag sits at the end like a name badge.
+Someone proposed stamping each project with a single digit and appending it to the host port. If the project tag is `3`, Postgres on `5432` becomes `54323`. Clean on paper. Original port is visible at the start, project tag sits at the end like a name badge.
 
 I suggested the other way around, prefix. Not because I had a gut feeling. Because I had already used prefix on a throwaway backup-verify stack (the one from an earlier blog where I was test-restoring production backups on a laptop) and it had gone through without a single hiccup. That stack's compose file had this sort of thing:
 
 ```yaml
 # backup-verify/docker-compose.yml (partial)
 services:
-  mysql:
-    image: mysql:8
-    ports:
-      - "43306:3306"
   postgres:
     image: postgres:16
     ports:
       - "45432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "46379:6379"
 ```
 
 Nothing fancy. Just prefix `4` on everything. It worked first try and I had forgotten about it until the suffix conversation came up.
@@ -95,7 +95,7 @@ The moment your original port crosses `6553`, that formula spits out a number ab
 And here is the part that made me stop the experiment. Almost every port that matters in a typical stack sits right in that broken zone.
 
 ```
-8080 (phpmyadmin, tomcat, jenkins)  ->  80803   invalid
+8080 (pgadmin, tomcat, jenkins)     ->  80803   invalid
 8081 (common alt-http)              ->  80813   invalid
 8082 (common alt-http)              ->  80823   invalid
 8025 (mailhog ui)                   ->  80253   invalid
@@ -104,7 +104,7 @@ And here is the part that made me stop the experiment. Almost every port that ma
 6379 (redis)                        ->  63793   invalid
 ```
 
-The webserver on `8080`, the frontend dev ports `8081` and `8082`, MailHog, Redis, Elasticsearch. All broken under the suffix rule. The convention only survived for a small handful of lower ports like `3306` and `5432`, which is probably why nobody caught it during the discussion.
+The webserver on `8080`, the frontend dev ports `8081` and `8082`, MailHog, Redis, Elasticsearch. All broken under the suffix rule. The convention only survived for a small handful of lower ports like `5432`, which is probably why nobody caught it during the discussion.
 
 Tell me I am not the only one who has watched a room vote for the thing that looked prettier and then quietly known it was going to fall over.
 
@@ -148,13 +148,13 @@ After switching the convention the stack came back up on the first try. Sample m
 |--------------|----------------|----------------------|
 | Web (HTTP)   | 80             | 380                  |
 | SSH          | 22             | 322                  |
-| MySQL        | 3306           | 33306                |
-| phpMyAdmin   | 80             | 38080                |
+| Postgres     | 5432           | 35432                |
+| pgAdmin      | 80             | 38080                |
 | MailHog UI   | 8025           | 38025                |
 | MailHog SMTP | 1025           | 31025                |
 | Redis        | 6379           | 36379                |
 
-Nothing inside the containers changed. Apache still listens on `80`, MySQL still listens on `3306`, and containers on the same Docker network talk to each other on the original ports. Only the laptop-facing port number moved. So no `.env` edits, no Apache config rewrites, nothing downstream to chase.
+Nothing inside the containers changed. Apache still listens on `80`, Postgres still listens on `5432`, and containers on the same Docker network talk to each other on the original ports. Only the laptop-facing port number moved. So no `.env` edits, no Apache config rewrites, nothing downstream to chase.
 
 ## One honest caveat on prefix
 
