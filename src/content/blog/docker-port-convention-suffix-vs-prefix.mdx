@@ -1,32 +1,75 @@
 ---
-title: "Suffix vs Prefix: Choosing a Docker Port Convention That Actually Works"
-description: "Appending a digit to Docker host ports feels clean on paper. Then it overflows 65535 and Docker refuses to start. Here is why prepending is the safer pick."
+title: "Why I Stopped Suffixing Docker Host Ports"
+description: "A colleague raised port conflicts in the daily. I never had the issue. Then I tried the group's suffix idea anyway and Docker instantly refused to start. Here is what I learned."
 pubDate: 2026-04-23
 tags: ["docker", "devops", "compose", "workflow"]
 draft: false
 ---
 
-# Suffix vs Prefix: Choosing a Docker Port Convention That Actually Works
+# Why I Stopped Suffixing Docker Host Ports
 
 ![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero.png)
 
-> **TL;DR:** Appending a project digit to Docker host ports feels clean on paper. Then it overflows 65535 and Docker refuses to start. Prepend the digit instead. The math always works, the numbers stay readable, and you will not find out the hard way.
+> **TL;DR:** A suffix convention for Docker host ports (`3306 -> 33063`) looks clean until the result goes over 65535 and Docker refuses to start. Prefix (`3306 -> 33306`) keeps the math in bounds for almost every common dev port. And if you do not want to bake any of this into the repo, a gitignored `docker-compose.override.yml` is still the simplest answer.
 
-One of those afternoons when I was trying to bring up a second Docker project on my laptop and the terminal kept shouting at me about port conflicts. Classic.
+In the daily the other day, a colleague flagged something that had clearly been eating at them. Multiple Docker projects on the same laptop kept stepping on each other's ports. You bring one stack up, another one refuses to start because `3306` or `8080` is already taken. You go stop the first stack. You forget you needed it. Same loop, different day.
 
-If you have ever run more than one compose stack on the same machine, you already know the script. You bring up Project A. It happily grabs port 3306 for MySQL. You try to bring up Project B. It also wants 3306. Docker shrugs and walks away. You go stop Project A. You forget it was running something you actually needed. The cycle continues.
+I sat there quietly because I had not run into this problem for a long time.
 
-So I needed a simple rule. Give every project its own single digit. Stick that digit on the port somewhere. Now nothing fights.
+## The override file nobody was using
 
-The only question left was: stick it at the front, or stick it at the back?
+For the projects I worked on, I had been keeping a gitignored `docker-compose.override.yml` next to the real compose file. Docker Compose automatically merges it on top of `docker-compose.yml`, so I got to map host ports however I wanted on my own machine without touching the committed file.
 
-## The suffix idea
+Mine looked roughly like this.
 
-My first instinct was to go with a suffix. If MySQL is `3306` and the project tag is `3`, the host port becomes `33063`. Postgres `5432` becomes `54323`. It reads nicely from left to right. You can still see the original port at the start, then the project tag at the end, like a little name badge.
+```yaml
+# docker-compose.override.yml (gitignored)
+# Host-side port mapping. Only applies to my laptop.
+services:
+  web:
+    ports:
+      - "380:80"
+  db:
+    ports:
+      - "33306:3306"
+  mailhog:
+    ports:
+      - "38025:8025"
+      - "31025:1025"
+```
 
-I went ahead and applied it to one of my stacks. Saved the compose file. Ran it.
+Zero conflicts. Zero edits to any file that goes into git. Every developer could keep their own override with whatever port scheme made sense for them.
 
-What happened was this.
+I suggested the same to the colleague. They pushed back, fairly. They wanted a solution that lived in the repository itself so that a fresh clone would just come up without every dev having to remember to create a local file. Not an unreasonable ask.
+
+So the discussion turned into: if we are going to bake it into the repo, how do we pick host ports that will not fight across projects?
+
+## The suffix idea wins the vote
+
+Someone proposed stamping each project with a single digit and appending it to the host port. If the project tag is `3`, MySQL on `3306` becomes `33063`. Postgres on `5432` becomes `54323`. Clean on paper. Original port is visible at the start, project tag sits at the end like a name badge.
+
+I suggested the other way around, prefix. Not because I had a gut feeling. Because I had already used prefix on a throwaway backup-verify stack (the one from an earlier blog where I was test-restoring production backups on a laptop) and it had gone through without a single hiccup. That stack's compose file had this sort of thing:
+
+```yaml
+# backup-verify/docker-compose.yml (partial)
+services:
+  mysql:
+    image: mysql:8
+    ports:
+      - "43306:3306"
+  postgres:
+    image: postgres:16
+    ports:
+      - "45432:5432"
+```
+
+Nothing fancy. Just prefix `4` on everything. It worked first try and I had forgotten about it until the suffix conversation came up.
+
+The majority in the meeting preferred suffix. It read nicer, they argued. Fine. I said okay, let me go apply it and see how it holds up. In my head I already had a quiet suspicion this would bite us somewhere, but I could not articulate exactly where. So I went and did it.
+
+## The moment Docker said no
+
+I went through the compose file, appended `3` to every host port, saved, and ran:
 
 ```bash
 $ docker compose up
@@ -35,21 +78,21 @@ Error: invalid hostPort: 80803
 
 I sat there for a good bit of time wondering what was wrong with `80803`. Then it clicked. `80803` is not a port. It cannot be a port. No port on the planet can be `80803`.
 
-And just like that, the convention I liked the most started falling apart.
+And that is when the suspicion turned into math.
 
 ## The 16-bit reality check
 
-Here is the bit I forgot. TCP and UDP ports are 16-bit unsigned integers. The highest valid port is `65535`. This is not a Docker rule. It is not a Linux rule. It is baked into how the protocol was designed decades ago, and nothing is going to change it anytime soon.
+TCP and UDP ports are 16-bit unsigned integers. The highest valid port is `65535`. This is not a Docker rule. It is not a Linux rule. It is baked into how the protocol was designed decades ago and nothing is going to change it anytime soon.
 
-Now apply that to the suffix idea. Under the hood you are computing:
+Under the suffix convention you are computing:
 
 ```
 newPort = (oldPort * 10) + projectDigit
 ```
 
-The moment your original port crosses `6553`, that formula spits out a number above `65535`. The kernel cannot bind it. Docker will not even accept it in the compose file. Your stack is stuck before it gets a chance to start.
+The moment your original port crosses `6553`, that formula spits out a number above `65535`. The kernel cannot bind it. Docker will not even accept it in the compose file.
 
-Here is how that plays out across common dev ports:
+And here is the part that made me stop the experiment. Almost every port that matters in a typical stack sits right in that broken zone.
 
 ```
 8080 (phpmyadmin, tomcat, jenkins)  ->  80803   invalid
@@ -61,43 +104,45 @@ Here is how that plays out across common dev ports:
 6379 (redis)                        ->  63793   invalid
 ```
 
-That is a pile of everyday services that simply cannot be remapped with a suffix. The convention only survives for a handful of ports below `6554`. Not exactly the clean rule I was hoping for.
+The webserver on `8080`, the frontend dev ports `8081` and `8082`, MailHog, Redis, Elasticsearch. All broken under the suffix rule. The convention only survived for a small handful of lower ports like `3306` and `5432`, which is probably why nobody caught it during the discussion.
 
-Tell me I am not the only one who has committed to something that looked cleaner on paper and then got punished by it the moment real data showed up.
+Tell me I am not the only one who has watched a room vote for the thing that looked prettier and then quietly known it was going to fall over.
 
 ## Why prefix quietly wins
 
-Flip the convention around and the problem goes away. Prepend the project digit instead of appending it. For a 4-digit original port you are now computing:
+Flip the convention and the problem goes away. Prepend the project digit instead of appending it. For a 4-digit original port you are now computing:
 
 ```
 newPort = (projectDigit * 10000) + oldPort
 ```
 
-Every one of the ports above now has a valid prefixed version:
+Every one of the ports above gets a valid prefixed version:
 
 ```
 8080  ->  38080   valid
 8081  ->  38081   valid
+8082  ->  38082   valid
+8025  ->  38025   valid
 9000  ->  39000   valid
 9200  ->  39200   valid
 6379  ->  36379   valid
 ```
 
-No overflow. No special cases hiding in the second half of the port range. No "wait, is this one safe to suffix" moments.
+No overflow. No "wait, is this port safe to suffix" moments. No quietly skipping Redis because the math does not work.
 
-## More than just math
+## A few other small wins
 
-Even putting the overflow aside, prefix ends up being nicer to live with day to day.
+Even putting the overflow aside, prefix ends up being nicer to live with.
 
-The original port stays readable at the tail. When I see `38080`, my brain parses it as "something on 8080, project 3". When I see `80803` my brain has to work backwards to figure out where the original port ended. A small difference, but you look at these numbers a lot.
+The original port stays readable at the tail. `38080` parses as "something on 8080, project 3". `80803` makes you work backwards to find the original port.
 
-You also get free grouping. Every port on one stack starts with `3`. If another project picks `4`, every port on that stack starts with `4`. A quick `lsof -iTCP | grep :3` gives you everything for one project. `docker ps` lines up nicely when you sort by port. Tiny quality of life stuff, but tiny quality of life stuff is the reason conventions exist at all.
+Every port in one project starts with the same digit. A quick `lsof -iTCP | grep :3` shows you everything for that stack in one shot. When a second project picks digit `4`, its ports group under `:4`. It is a small thing, but you look at port numbers a lot when you run more than one stack.
 
-And there is no math to second-guess. Whichever port you are mapping, prefix is fine. You do not have to stop and check whether today's port happens to be above `6553`.
+And there is no edge case to remember. Whichever port you are mapping, prefix is fine.
 
 ## What the final mapping looked like
 
-After switching the convention, the stack came back up on the first try. Here is a sample mapping using project digit `3`.
+After switching the convention the stack came back up on the first try. Sample mapping using project digit `3`:
 
 | Service      | Container port | Host port (prefix 3) |
 |--------------|----------------|----------------------|
@@ -107,15 +152,18 @@ After switching the convention, the stack came back up on the first try. Here is
 | phpMyAdmin   | 80             | 38080                |
 | MailHog UI   | 8025           | 38025                |
 | MailHog SMTP | 1025           | 31025                |
+| Redis        | 6379           | 36379                |
 
-One thing worth calling out: I did not have to touch any Apache site config or `.env` file. Containers talk to each other on their original ports inside the Docker network. Only the host side of the mapping changed. So `web -> db:3306` keeps working as before, even though on the laptop you now hit `localhost:33306`.
+Nothing inside the containers changed. Apache still listens on `80`, MySQL still listens on `3306`, and containers on the same Docker network talk to each other on the original ports. Only the laptop-facing port number moved. So no `.env` edits, no Apache config rewrites, nothing downstream to chase.
 
-## One honest caveat
+## One honest caveat on prefix
 
-Prefix is not a silver bullet. If your original port is above `35535`, even prefix overflows. MongoDB on `27017` becomes `327017` with prefix, which is also invalid. For those few cases you have to pick a fresh memorable port rather than applying the rule blindly. Rare enough in practice that you deal with it case by case, but worth naming so nobody gets blindsided.
+Prefix is not a silver bullet either. If your original port is above `35535`, even prefix overflows. MongoDB on `27017` becomes `327017` with prefix `3`, which is invalid. For those you have to pick a fresh memorable port rather than applying the rule blindly. Rare enough in practice that it is a footnote, not a blocker.
 
 ## The takeaway
 
-If you are setting up a port convention for running multiple Docker projects side by side, save yourself the debate. Go with prefix. The math always works, the numbers stay readable, and nobody is going to discover the 16-bit limit in the middle of something important.
+If your stack is going to encode host ports in the committed compose file, go with prefix. Suffix looks cleaner for three minutes and then quietly dies on the first common port above `6553`.
 
-That is pretty much it from my side today. Let me know what you think, or if you landed on a completely different convention. Those stories are always the best ones. See you soon in the next blog.
+And if you would rather not bake any of this into the repo at all, the `docker-compose.override.yml` route is still the lightest option. The real file stays clean for everyone, each dev picks their own host-side mapping, and nobody has to vote on a convention in the morning meeting.
+
+So yeah, that is my take on this. Yours might look completely different, and that is exactly what makes this whole space interesting. Catch you in the next blog, should not be too long from now.
