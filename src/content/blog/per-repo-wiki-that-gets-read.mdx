@@ -1,0 +1,274 @@
+---
+title: "Building a per-repo wiki that actually gets read"
+description: "The docs existed. The CI/CD was already automated. And yet I was still getting pinged before every deployment. Honest field notes on why a per-repo wiki finally broke the loop, and the hidden .wiki.git repo nobody talks about."
+pubDate: 2026-04-24
+tags: ["docs", "github-actions", "devops", "team-process", "onboarding"]
+draft: false
+---
+
+# Building a per-repo wiki that actually gets read
+
+![A developer at a warm wooden desk with two open laptops, each showing a repository folder with a small wiki folder glowing inside, background shelves of sticky notes and chat bubbles being filed away, editorial flat cartoon style, muted retro colours](/blog/per-repo-wiki-hero.png)
+
+> **TL;DR** - Our docs were not missing. They were in READMEs, internal docs folders, and even in the comments of our CI/CD workflows. The CI/CD was fully automated. And yet one specific teammate kept pinging me before every deployment, before every local setup, before every env change. I was the human shortcut. The fix was to put a `wiki/` folder inside each repo, PR-reviewed, auto-synced to the hidden `<repo>.wiki.git` on every merge to main, and to change one habit on the team: answer the question, then write it down. Tooling was easy. The habit was the hard bit.
+
+## The moment I knew something had to change
+
+So there I was, a little while back, at the end of a long day, finishing up a team-wide Slack note explaining why we were finally going to have a wiki for every repo. I had written the whole thing out. The "one person becomes the bottleneck" part. The "acknowledge every question first, then document the answer" part. The "duplicate across repos is okay, because a new joiner only opens one repo" part. I was pretty proud of it, honestly.
+
+Twenty minutes later, the one teammate who had inspired about half of that note pinged me in DM asking if I had a moment to hop on a QA call.
+
+A little later: "Where are you creating this wiki?"
+
+A little later again: "I did not know that creating a `wiki/` folder in a repo adds it to the GitHub Wiki tab."
+
+(It does not, by the way. That is half of what this blog is about.)
+
+I am not telling this story to laugh at him. He is one of the nicest, most curious people on our team and he later wrote back the kindest message saying "you have often been the most responsive to my questions." That part is actually sweet. But the irony hit hard. I was literally in the middle of building a thing to stop one person from being the default answer desk, while being the default answer desk about the thing I was building.
+
+So yeah. Whatever I had been telling myself about the situation, that was the afternoon it stopped being funny and started being a project.
+
+## The uncomfortable part - the docs already existed
+
+Here is where I have to be honest, because the easy version of this story is "we had no docs, so we built a wiki and everyone lived happily ever after." That is not what happened.
+
+The docs existed.
+
+They were in the README of each repo. They were in a `docs/` folder with some decent notes. They were literally in the comments at the top of our CI/CD workflow files, where anybody could open the YAML and read exactly what a deploy would do, line by line.
+
+And the CI/CD itself was already automated. Push to the right branch, the workflow fires, it deploys. No human in the middle for almost every case. The workflow has a log. It has a status badge. It tells you when it started, what it did, and whether it passed.
+
+And yet I would still get a DM before a deployment. "Hey, can you deploy this for me?" The thing that was already automated. The thing where the "deploy" was "merge the PR." I would link the workflow run, explain again that it was already running, and that whole exchange would take more time than it would have taken either of us to just look at the Actions tab.
+
+That was the signal that the problem was not a documentation problem. It was a "the documentation exists but it is not in the place the person looks first" problem. And the place they look first, every single time, is Slack. DMs to me.
+
+## Why existing docs kept getting missed
+
+I thought about this for a while before writing the Slack note, because I did not want to be the guy who builds yet another documentation surface and then blames the team when it does not get used.
+
+A few reasons kept surfacing.
+
+The README was partly right. That is worse than being fully wrong, in a way. Once one thing in the README is stale, the reader quietly stops trusting the rest of it. Even the correct parts start feeling suspicious.
+
+The internal docs folder was a dumping ground. It had PRDs, architectural notes, feature specs, and, buried in the middle, one or two genuinely useful operational pages. If you did not already know the useful page existed, you would not find it by scrolling.
+
+The CI/CD workflow files were self-documenting, technically. But "self-documenting" means "if you know to open the file and read it." If the workflow is automatically doing the deployment and nobody has ever told you that it exists, you will keep asking a human to do the deployment for you. The workflow is only self-documenting to people who already know it is there.
+
+And the GitHub Wiki tab existed on every repo. It was also, basically, dead. A couple of pages, last touched so long ago that nobody could confidently say if any of it was still true. The UI for editing it is fine, honestly, but it sits outside the normal PR review flow, which means nobody was going to edit it on a Tuesday afternoon when they should be writing code.
+
+So docs existed. They just existed everywhere, at different levels of correctness, with no single first-stop the reader could trust. And when all the docs feel equally untrustworthy, the rational move for the reader is to skip all of them and ping the one human who will definitely give you the current answer. That human was me.
+
+## The conversation that finally kicked it off
+
+In a quiet one-to-one with a colleague I trust, I said out loud the thing I had been avoiding saying. "The docs exist. The CI/CD is automated. I am still getting pinged every time a deployment has to go out. Something about how we are doing this is broken, and it is not a code problem." He said what I already knew. "That is a team problem, not a you problem. Go fix the team problem."
+
+That evening I wrote the Slack note. The short version of it is this.
+
+- When someone asks a support question, acknowledge it in-thread first. Do not ghost. The person is actually blocked and needs at least a hello.
+- Answer the question.
+- Then push the answer into the relevant repo's wiki before end of day.
+- If the same answer applies to two repos, put it in both. The new hire joining the team next month only opens the repo they were assigned to, so that is where the answer needs to live.
+
+> **A new dev only opens the repo they were assigned to. So the docs have to be there when they look.**
+
+## Why we did not pick Confluence or Notion or a central wiki
+
+Honest pass at the alternatives. Confluence is fine. Notion is fine. A company-wide wiki is fine. We have a Notion workspace that does have useful stuff in it.
+
+But two things kept pulling us toward per-repo.
+
+The first is simply that a new joiner opens the repo. Not Notion. Not Confluence. The repo. That is where they are spending eight hours of their day. Documentation that is two clicks and one context-switch away is documentation they will not open. Putting the answer next to the code it describes is a huge win, even if that means the answer exists in two places.
+
+The second is that PR-reviewed Markdown beats a rich-text editor they have to context-switch into. A wiki page change becomes a Markdown diff on a feature branch. It gets reviewed. Typos are caught, stale facts are caught, "wait, we stopped doing that six months ago" is caught, all before the thing goes public.
+
+Duplication across repos is a feature, not a bug. If a port-collision note applies to both our older PHP repo and our newer NestJS one, it lives in both wikis. The reader does not have to know which one is the "correct" home for it, because they are already in the repo they care about.
+
+## The part most people do not know - the GitHub Wiki is a hidden repo
+
+This was the thing my teammate did not know, and honestly, most developers I have asked did not know it either.
+
+The GitHub Wiki is not a folder inside your repo. It is a separate git repo. It lives at `https://github.com/<owner>/<repo>.wiki.git`. You can clone it like any other repo. You can push to it, commit to it, look at its git log. The Wiki tab on github.com is just a UI on top of that hidden repo.
+
+There is one tiny gotcha. GitHub does not create the wiki repo for you automatically. Somebody has to go to the Wiki tab once, publish a placeholder first page through the UI, and from that moment on `git clone <repo>.wiki.git` works forever. If you have never touched the Wiki tab, that clone will just fail with "repository not found."
+
+Once you know this, the rest of the setup basically writes itself. You keep your docs in a `wiki/` folder inside the main repo, because that is where PR review, history, and `git blame` already live. Then you mirror `wiki/` into the hidden `<repo>.wiki.git` on every merge to main. The GitHub Wiki tab becomes a publishing destination, not a place you author things.
+
+## The setup
+
+Here is what each repo ended up with. The folder listing from a larger repo, just as an example of how it grew.
+
+```
+wiki/
+  _Footer.md
+  _Sidebar.md
+  Home.md
+  Introduction.md
+  Requirements.md
+  Development-Setup.md
+  Architecture.md
+  API-Reference.md
+  Deployment.md
+  Server-Access.md
+  CLI-Commands.md
+  Modules.md
+  Naming-Conventions.md
+  Testing.md
+  Performance.md
+  Release-Automation.md
+  Glossary.md
+```
+
+A smaller repo started with four pages and that is completely fine. You do not have to have sixteen pages on day one. You do not even have to have sixteen pages on day one hundred. The point is that the pages that do exist are correct and current.
+
+And here is the GitHub Action that makes the whole thing work. This is the real thing from our repos, not a simplified version.
+
+```yaml
+# .github/workflows/wiki-publish.yml
+# Syncs the wiki/ folder in this repo to the GitHub wiki on every push to
+# main. The code repo is the source of truth. The wiki repo is a sink.
+# Never edit pages via the GitHub wiki UI. They will be overwritten.
+
+name: Publish Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'wiki/**'
+      - '.github/workflows/wiki-publish.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: wiki-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code repo
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            wiki
+          sparse-checkout-cone-mode: false
+
+      - name: Clone wiki repo
+        env:
+          GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git" wiki-remote
+
+      - name: Sync wiki content
+        run: |
+          rsync -av --delete --exclude='.git' wiki/ wiki-remote/
+
+      - name: Commit and push
+        working-directory: wiki-remote
+        env:
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          TRIGGERED_BY: ${{ github.actor }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No wiki changes to publish."
+            exit 0
+          fi
+
+          SHORT_SHA="${SOURCE_SHA:0:7}"
+          git commit -m "docs(wiki): sync from ${SHORT_SHA}" \
+                     -m "Source: ${SOURCE_REPO}@${SOURCE_SHA}" \
+                     -m "Triggered by: ${TRIGGERED_BY}"
+          git push origin HEAD
+```
+
+A few things worth calling out in that file, because they were not obvious when I started.
+
+The path filter on the trigger (`paths: wiki/**`) means the job only runs when someone actually changes a wiki file or the workflow itself. Without it, every push to main kicks off the job, which makes the Actions tab noisy for no reason.
+
+The sparse checkout only pulls the `wiki/` folder. On big repos this is just nice to have, on really big repos it is genuinely faster.
+
+The `rsync --delete` is the important bit. If a page is removed from `wiki/`, it also disappears from the published wiki. Without `--delete`, old pages would linger forever on the Wiki tab like a graveyard of old truth.
+
+The concurrency group means two merges that happen close together will serialize cleanly instead of racing each other and one winning silently.
+
+And then the footgun. The default `GITHUB_TOKEN` that Actions give you for free cannot reliably push to the wiki repo. Depending on org settings and how the wiki repo was first created, it fails at the push step with permission errors that make no sense. So we use a separate `WIKI_TOKEN` secret, a personal access token with repo write scope, and fall back to `GITHUB_TOKEN` only so the workflow does not explode in forks. This PAT is the one honest piece of ceremony in the whole setup. It expires, you will forget to rotate it, and one day the workflow will show a green "succeeded" badge while silently not pushing anything. Document the rotation somewhere. Ideally, on the wiki.
+
+## Why this actually works
+
+The thing I like about this setup is that nothing about it is clever. Every piece of it was already there before we did anything.
+
+Wiki pages now go through the same PR review as code. Someone spots the typo, someone spots the outdated claim, someone says "we stopped doing that, by the way" and the page gets fixed before it ever makes it to the Wiki tab.
+
+History is in regular Git. `git blame` on a doc line tells you who wrote it, when, and in which PR. No opaque wiki version log. No mystery about why a sentence was added.
+
+Zero context switch. The developer is already in the repo, looking at their editor, looking at their branch. Adding a wiki page is editing a Markdown file and opening a PR. Same flow as everything else. Nobody has to remember a new tool.
+
+And the Wiki tab on the repo's GitHub page, which used to be a dead link nobody clicked, becomes a real place people open on purpose.
+
+## The habit side, which is the harder side
+
+> **Tooling gets you the plumbing. Habits get you the wiki.**
+
+The workflow is the easy part. The boring truth is that a wiki only stays useful if the team treats it like a living thing. That meant actually changing how we respond to questions.
+
+Three rules ended up sticking.
+
+Answer the question first. Always acknowledge in thread. Nobody wants their question ghosted with "it is in the wiki." Even if it is in the wiki, reply, link to it, say hi. The person asking is usually blocked, and being blocked while also being ignored is the worst combination.
+
+Then write the answer down. The reply and the wiki page edit are basically the same effort. You have already explained the thing in Slack. Copy-paste, clean it up, open a PR. The cost of documenting is "one extra paste and one extra PR." The cost of not documenting is "I will answer this same question again in six weeks."
+
+Wiki-only PRs do not need code review. The person writing the page is the expert on the thing they are writing about. Making them wait two days for two approvals to land a documentation fix kills the habit instantly. I still look at wiki PRs, but I do not block them.
+
+On our newer repo, that habit made it all the way into the Home page of the wiki itself. "If a teammate asks you something not covered here, answer in thread, then add the answer to the relevant page before end of day." That line sitting at the top of the wiki is a tiny, constant reminder that the wiki is everyone's job.
+
+Has this happened to you also? One person on the team quietly turns into the Slack search engine, and by the time everyone notices, they are already burnt out from it. I would genuinely love to hear how your team handled it, if you have been through this before.
+
+## The honest caveats
+
+I am not going to pretend this setup is free or that it solved everything.
+
+Duplication across repos is real and you do feel it. The same port-collision note, the same env-variable note, the same "do not forget to bump this version" note can end up in two or three different wikis. I decided early that I was okay with this. A shared page nobody can find is strictly worse than two slightly-duplicated pages that both readers find in the place they were already looking.
+
+Seeding takes effort. The first few pages are a slog. You sit there, cup of coffee, trying to remember all the bits of tribal knowledge that you know exist but have never actually written down. Do not expect the team to show up on day one with a flood of contributions. For a while, you will be writing the first version of most pages yourself. That is fine. Once there is stuff on the page, people find it much easier to add to.
+
+The PAT, as I mentioned, is a real footgun. It has repo-write scope. It expires. One day it will quietly stop working.
+
+And then the honest, slightly uncomfortable one. A wiki does not magically make people read documentation. If a teammate was not reading the README, they may not read the wiki either, at least not at first. What the wiki changes is the answer I give them. Instead of re-typing the explanation for the fifth time, I reply with "good question, this is on the wiki page for exactly this" and link it. Over time, the shape of the reply itself trains the team to check the wiki first. But it is a slow training, not an overnight fix.
+
+This whole thing only works if the team genuinely commits to the ask-answer-document habit. If the culture on your team is "answer in DMs, feel good about being helpful, move on," the wiki will rot the same way the old Wiki tab rotted. Tooling will not fix that. You need at least a couple of people, ideally including one tech lead, who will treat every answered question as an unwritten wiki page. Without that, skip the whole project.
+
+## What I would do differently
+
+Not overthink the page structure on day one. Three pages is enough to start. Home. Development Setup. Deployment. That is it. The rest of the structure will emerge from the questions that actually come in. If you try to design the perfect information architecture on day zero, you will end up with a beautiful empty shell that nobody writes into.
+
+Put the path filter on the workflow from day one. I had it triggering on every push to main for a while, which made the Actions tab noisier than it needed to be.
+
+Add a one-line "edit this page via a PR to `wiki/<filename>.md`" contributing note on every page from the start. It removes the confusion my teammate ran into, and it is the kind of thing you forget to add later.
+
+Spend less time arguing with the team about whether a per-repo wiki is the right shape, and more time just shipping page two. The first page is a statement of intent. The second page is when the team actually starts believing in it.
+
+## One small thing that changed
+
+The most recent new joiner ran the local stack without pinging me once. Not one message. That is the only metric I actually care about, honestly. And quietly, the teammate who triggered half of this is now leaving thoughtful comments on wiki PRs, which made me smile the first time I saw it.
+
+## Try it on one repo
+
+Do not roll this out across your whole organisation next Monday. Nothing nukes a good idea faster than forcing it on twenty teams at once.
+
+Pick one repo. Ideally the one whose Slack threads you keep scrolling through to find the same answer you gave last month. Add a `wiki/` folder. Copy the workflow above. Create the Wiki tab once through the GitHub UI so the hidden repo exists. Seed three pages. And see if anyone on the team opens a PR for page four.
+
+A wiki that sits right next to the codebase is not a radical idea. It is just an obvious one that somehow almost nobody does. Give it a go and see how it feels for your team.
+
+So yeah, that is my take. Yours might be completely different, and that is exactly what makes this whole space interesting. Catch you in the next blog - should not be too long from now.
