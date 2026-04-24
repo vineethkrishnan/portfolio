@@ -1,81 +1,121 @@
 ---
 title: "Suffix vs Prefix: Choosing a Docker Port Convention That Actually Works"
-description: "Why our team's debate about appending digits to Docker ports ended in a 16-bit explosion, and how prepending saved the day."
+description: "Our team voted for suffix. Then Docker refused to start. Here is why appending a digit to host ports quietly breaks, and why prepending is the safer bet."
 pubDate: 2026-04-23
-tags: ["docker", "devops", "tips", "workflow"]
+tags: ["docker", "devops", "compose", "workflow"]
 draft: false
 ---
 
 # Suffix vs Prefix: Choosing a Docker Port Convention That Actually Works
 
-![A developer looking at a computer screen showing a giant red error message about port 80803, with team members debating suffix vs prefix in the background.](/blog/docker-port-convention-hero.png)
+![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero.png)
 
-> **TL;DR:** Appending a digit (suffix) to Docker ports breaks for anything over 6553. Prepending (prefix) is the way to go because it respects the 16-bit limit and keeps your sanity intact.
+> **TL;DR:** Appending a project digit to Docker host ports feels clean on paper. Then it overflows 65535 and Docker refuses to start. Prepend the digit instead. The math always works, the numbers stay readable, and you will not find out the hard way during a live demo.
 
-One fine morning, we were having our usual dev daily. The topic? Port conflicts. If you work on multiple Docker projects like we do, you know the pain. You try to start Project B, but it screams because Project A is already sitting on port 3000. 
+One of those mornings in the dev daily where we went in planning to talk about sprint items and ended up arguing about port numbers. Classic.
 
-So, we decided to have a convention. Every project gets a unique digit, and we just attach it to the port. Simple, right? 
+The pain was real, to be fair. If you work on more than one Docker project on the same laptop, you already know the script. You bring up Project A. It happily grabs port 3306 for MySQL. You try to bring up Project B. It also wants 3306. Docker shrugs and walks away. You go stop Project A. You forget it is running something important. The cycle continues.
 
-Well, that's where the "Suffix vs Prefix" war started. 
+So the team agreed on a simple convention. Every project gets its own single digit. Stick that digit on the port somewhere. Now nobody fights.
 
-## The Suffix Dream (And Why It Failed)
+The only question left was: stick it at the front, or stick it at the back?
 
-Most of us liked the idea of a suffix. If the default port is 3306 for MySQL, and your project ID is 3, you just make it `33063`. It looks clean. It feels natural. 
+## The suffix dream
 
-I went ahead and tried it on our Locaboo 3 stack. I updated the `docker-compose.yml`, saved the file, and ran `docker compose up`. 
+Most of the team liked the suffix idea. If MySQL is `3306` and your project is number 3, your host port becomes `33063`. Postgres `5432` becomes `54323`. It reads nicely from left to right. You can still see the original port at the start, then the project tag at the end, like a little name badge.
 
-And then, everything blew up.
+I said okay, let me go try it on our Locaboo 3 stack and see what happens.
+
+What happened was this.
 
 ```bash
+$ docker compose up
 Error: invalid hostPort: 80803
 ```
 
-Docker just looked at me and said, "No." 
+I sat there for a good bit of time wondering what was wrong with `80803`. Then it clicked. `80803` is not a port. It cannot be a port. No port on the planet can be `80803`.
 
-## The 16-Bit Reality Check
+And just like that, the convention we all voted for started falling apart.
 
-Here is the thing I (and half the team) forgot: TCP ports are 16-bit unsigned integers. That means the maximum possible port number is **65535**. 
+## The 16-bit reality check
 
-When you use the suffix approach, you are basically doing:  
-`newPort = oldPort * 10 + projectDigit`
+Here is the bit I forgot, and I am going to guess half the team forgot it too. TCP and UDP ports are 16-bit unsigned integers. The highest valid port is `65535`. This is not a Docker rule. It is not a Linux rule. It is baked into how the protocol was designed decades ago, and nothing is going to change it anytime soon.
 
-If your original port is something like `8080` (for phpMyAdmin) or `8025` (for MailHog), the math looks like this:  
-`8080 * 10 + 3 = 80803`
+Now apply that to the suffix idea. Under the hood you are computing:
 
-That's way over 65535. It is not just a "bad idea"—it is physically impossible for the kernel to bind that port. 
+```
+newPort = (oldPort * 10) + projectDigit
+```
 
-## Why Prefix Wins Every Time
+The moment your original port crosses `6553`, that formula spits out a number above `65535`. The kernel cannot bind it. Docker will not even accept it in the compose file. Your stack is stuck before it gets a chance to start.
 
-After hitting that wall, I switched to the prefix approach. Instead of appending the 3, I prepended it. 
+Here is how that plays out across common dev ports:
 
-- `8080` (original) → `38080` (prefixed)
-- `8025` (original) → `38025` (prefixed)
+```
+8080 (phpmyadmin, tomcat, jenkins)  ->  80803   invalid
+8081 (common alt-http)              ->  80813   invalid
+8082 (common alt-http)              ->  80823   invalid
+8025 (mailhog ui)                   ->  80253   invalid
+9000 (php-fpm, minio, portainer)    ->  90003   invalid
+9200 (elasticsearch)                ->  92003   invalid
+6379 (redis)                        ->  63793   invalid
+```
 
-Both are well under 65535. In fact, most dev ports stay under 10000, so prepending a digit (3, 4, 5) will almost always land you in a safe zone.
+That is a pile of everyday services that simply cannot be remapped with a suffix. The convention only survives for a handful of ports below `6554`. Not exactly the clean rule we were hoping for.
 
-**Have you ever tried to explain 16-bit limits to someone who just wants their project to run? No? Good. Keep it that way.**
+Tell me I am not the only one who has voted for something that sounded cleaner on paper and then got punished by it the moment real data showed up.
 
-## More Than Just Math
+## Why prefix quietly wins
 
-Beyond the "not breaking everything" part, prefixing actually feels better:
+Switch the convention around and the problem goes away. Prepend the project digit instead of appending it. For a 4-digit original port you are now computing:
 
-1. **Readability:** When you see `38080`, you immediately see "phpMyAdmin on 8080" prefixed with project 3. In `80803`, the original port is buried.
-2. **Grouping:** Run `docker ps` or `lsof -iTCP | grep :3` and you see all Locaboo ports grouped together. It is beautiful.
-3. **No Brainer:** You don't have to check if the math works. Just slap the digit at the front and move on.
+```
+newPort = (projectDigit * 10000) + oldPort
+```
 
-## The Locaboo 3 Mapping
+Every one of the ports above now has a valid prefixed version:
 
-Here is what we ended up with for Locaboo 3 (using suffix 3 where it worked, but prefix everywhere else for consistency):
+```
+8080  ->  38080   valid
+8081  ->  38081   valid
+9000  ->  39000   valid
+9200  ->  39200   valid
+6379  ->  36379   valid
+```
 
-| Service | Original Port | Host Port (Prefix 3) | Result |
-|---------|---------------|----------------------|--------|
-| Web (HTTP) | 80 | 380 | ✅ Works |
-| MySQL | 3306 | 33306 | ✅ Works |
-| phpMyAdmin | 8080 | 38080 | ✅ Works |
-| MailHog UI | 8025 | 38025 | ✅ Works |
+No overflow. No special cases hiding in the second half of the port range. No meetings about which ports are "safe to suffix".
 
-So, if you are setting up a team convention for Docker ports, do yourself a favor: **Prepend, don't append.** 
+## More than just math
 
-If you have seen this "invalid hostPort" error before, you know the pain. Don't be like me and find out during a live demo.
+Even putting the overflow aside, prefix ends up being nicer to live with day to day.
 
-That's it for today. Happy docking!
+The original port stays readable at the tail. When I see `38080`, my brain parses it as "something on 8080, project 3". When I see `80803` my brain has to work backwards to figure out where the original port ended. A small difference, but you look at these numbers a lot.
+
+You also get free grouping. Every Locaboo port starts with `3`. If another project picks `4`, every port on that stack starts with `4`. A quick `lsof -iTCP | grep :3` gives you everything for one project. `docker ps` lines up nicely when you sort by port. Tiny quality of life stuff, but tiny quality of life stuff is the reason conventions exist at all.
+
+And there is no math to second-guess. Whichever port you are mapping, prefix is fine. You do not have to stop and check whether today's port happens to be above `6553`.
+
+## What we landed on for Locaboo 3
+
+After switching the convention, the stack came back up on the first try. Here is the final mapping.
+
+| Service      | Container port | Host port (prefix 3) |
+|--------------|----------------|----------------------|
+| Web (HTTP)   | 80             | 380                  |
+| SSH          | 22             | 322                  |
+| MySQL        | 3306           | 33306                |
+| phpMyAdmin   | 80             | 38080                |
+| MailHog UI   | 8025           | 38025                |
+| MailHog SMTP | 1025           | 31025                |
+
+One thing that surprised a few teammates: we did not have to touch the Apache site configs or the `.env` files at all. Containers talk to each other on their original ports inside the Docker network. Only the host side of the mapping changed. So `web -> db:3306` keeps working as before, even though on the laptop you now hit `localhost:33306`.
+
+## One honest caveat
+
+Prefix is not a silver bullet. If your original port is above `35535`, even prefix overflows. MongoDB on `27017` becomes `327017` with prefix, which is also invalid. For those few cases the team has to pick a fresh memorable port rather than applying the rule blindly. Rare enough in practice that we deal with it case by case, but worth naming so nobody gets blindsided.
+
+## The takeaway
+
+If your team is setting up a port convention for running multiple Docker projects side by side, save yourself the debate. Go with prefix. The math always works, the numbers stay readable, and nobody is going to discover the 16-bit limit on a demo call.
+
+That is pretty much it from my side today. Let me know what you think, or if your team landed on a completely different convention. Those stories are always the best ones. See you soon in the next blog.
