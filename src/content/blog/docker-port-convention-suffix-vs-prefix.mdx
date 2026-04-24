@@ -1,16 +1,16 @@
 ---
-title: "Why I Stopped Suffixing Docker Host Ports"
-description: "A colleague raised port conflicts in the daily. I never had the issue. Then I tried the group's suffix idea anyway and Docker instantly refused to start. Here is what I learned."
+title: "Why I Stopped Arguing About Docker Port Conventions"
+description: "A colleague raised port conflicts in the daily. A suffix vote lost to the 16-bit limit. A prefix rule worked but still felt wrong. Then docker-compose.override.yml.example made the whole debate go away."
 pubDate: 2026-04-23
 tags: ["docker", "devops", "compose", "workflow"]
 draft: false
 ---
 
-# Why I Stopped Suffixing Docker Host Ports
+# Why I Stopped Arguing About Docker Port Conventions
 
 ![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero.png)
 
-> **TL;DR:** A suffix convention for Docker host ports (`5432 -> 54323`) looks clean until the result goes over 65535 and Docker refuses to start. Prefix (`5432 -> 35432`) keeps the math in bounds for almost every common dev port. And if you do not want to bake any of this into the repo, a gitignored `docker-compose.override.yml` is still the simplest answer.
+> **TL;DR:** Suffixing ports (`5432 -> 54323`) breaks above 65535. Prefix (`5432 -> 35432`) holds up for almost every common dev port. But the cleanest answer is to stop baking host ports into the committed compose file at all. Commit a `docker-compose.override.yml.example`, gitignore the real override, copy on first clone. Same pattern as `.env.example`, zero debate.
 
 In the daily the other day, a colleague flagged something that had clearly been eating at them. Multiple Docker projects on the same laptop kept stepping on each other's ports. You bring one stack up, another one refuses to start because `5432` or `8080` is already taken. You go stop the first stack. You forget you needed it. Same loop, different day.
 
@@ -140,30 +140,87 @@ Every port in one project starts with the same digit. A quick `lsof -iTCP | grep
 
 And there is no edge case to remember. Whichever port you are mapping, prefix is fine.
 
-## What the final mapping looked like
-
-After switching the convention the stack came back up on the first try. Sample mapping using project digit `3`:
-
-| Service      | Container port | Host port (prefix 3) |
-|--------------|----------------|----------------------|
-| Web (HTTP)   | 80             | 380                  |
-| SSH          | 22             | 322                  |
-| Postgres     | 5432           | 35432                |
-| pgAdmin      | 80             | 38080                |
-| MailHog UI   | 8025           | 38025                |
-| MailHog SMTP | 1025           | 31025                |
-| Redis        | 6379           | 36379                |
-
-Nothing inside the containers changed. Apache still listens on `80`, Postgres still listens on `5432`, and containers on the same Docker network talk to each other on the original ports. Only the laptop-facing port number moved. So no `.env` edits, no Apache config rewrites, nothing downstream to chase.
-
 ## One honest caveat on prefix
 
 Prefix is not a silver bullet either. If your original port is above `35535`, even prefix overflows. MongoDB on `27017` becomes `327017` with prefix `3`, which is invalid. For those you have to pick a fresh memorable port rather than applying the rule blindly. Rare enough in practice that it is a footnote, not a blocker.
 
+## The pivot: stop baking host ports into docker-compose.yml at all
+
+While I was writing up the prefix rollout, something in the back of my head kept nagging. Why are we picking one rule and forcing every developer on the project, forever, to live with it? We already solved this exact shape of problem for environment variables. Commit a `.env.example`. Gitignore the real `.env`. Each dev copies once and adjusts.
+
+Docker Compose has had the same pattern built in for years. If a `docker-compose.override.yml` sits next to your `docker-compose.yml`, Compose automatically merges it on top of the base file (see the [official docs on merging multiple compose files](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/)). So the host-side port mapping can live entirely in the override, and the override can be gitignored.
+
+The missing piece was the one `.env.example` taught us: ship a committed template so a fresh clone has a working default. That is all.
+
+## The rollout: docker-compose.override.yml.example
+
+Here is the shape of what I am rolling out to replace the whole suffix vs prefix argument.
+
+The committed base file stays clean. No host-side ports at all, just the container-side ones needed for health checks or internal networking.
+
+```yaml
+# docker-compose.yml (committed)
+services:
+  web:
+    build: .
+    expose:
+      - "80"
+  postgres:
+    image: postgres:16
+    expose:
+      - "5432"
+  redis:
+    image: redis:7
+    expose:
+      - "6379"
+```
+
+The template file, committed with a sensible default mapping using prefix `3` (the lesson we still keep from the detour above).
+
+```yaml
+# docker-compose.override.yml.example (committed)
+# Copy this to docker-compose.override.yml on first clone.
+# Change any port here if it collides with another project on your machine.
+services:
+  web:
+    ports:
+      - "380:80"
+  postgres:
+    ports:
+      - "35432:5432"
+  pgadmin:
+    ports:
+      - "38080:80"
+  mailhog:
+    ports:
+      - "38025:8025"
+      - "31025:1025"
+  redis:
+    ports:
+      - "36379:6379"
+```
+
+The real override gets gitignored.
+
+```gitignore
+# .gitignore
+docker-compose.override.yml
+```
+
+And the first-clone flow becomes the same muscle memory as `.env`.
+
+```bash
+cp .env.example .env
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up
+```
+
+That is the whole rollout. No vote. No suffix vs prefix. No 16-bit math nobody remembers until it breaks.
+
 ## The takeaway
 
-If your stack is going to encode host ports in the committed compose file, go with prefix. Suffix looks cleaner for three minutes and then quietly dies on the first common port above `6553`.
+The suffix versus prefix debate was not wasted. It taught me that Docker host ports are not just strings, they are 16-bit integers with a hard ceiling, and that suffix will quietly die above `6553`. Prefix is the safer of the two if you have to pick.
 
-And if you would rather not bake any of this into the repo at all, the `docker-compose.override.yml` route is still the lightest option. The real file stays clean for everyone, each dev picks their own host-side mapping, and nobody has to vote on a convention in the morning meeting.
+But the real takeaway is that you probably should not be picking. Commit a `docker-compose.override.yml.example`, gitignore the real override, and let developers copy on first clone. Same pattern every backend already uses for `.env`. Clean committed file, safe defaults for a fresh clone, full freedom on each laptop, zero meetings.
 
-So yeah, that is my take on this. Yours might look completely different, and that is exactly what makes this whole space interesting. Catch you in the next blog, should not be too long from now.
+That is pretty much it from my side today. Let me know what you think, or if your team landed on a completely different pattern. Those stories are always the best ones. See you soon in the next blog.
