@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.23](https://github.com/vineethkrishnan/portfolio/compare/v0.0.22...v0.0.23) (2026-04-24)
+
+
+### Documentation
+
+* **blog:** pivot port convention post to override.yml.example rollout ([#46](https://github.com/vineethkrishnan/portfolio/issues/46)) ([e4c0242](https://github.com/vineethkrishnan/portfolio/commit/e4c024288538f1d6800457112e42dc0137acb69c))
+
 ## [0.0.22](https://github.com/vineethkrishnan/portfolio/compare/v0.0.21...v0.0.22) (2026-04-23)
 
 
