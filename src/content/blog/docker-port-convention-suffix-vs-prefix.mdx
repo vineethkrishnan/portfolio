@@ -8,7 +8,7 @@ draft: false
 
 # Why I Stopped Arguing About Docker Port Conventions
 
-![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero.png)
+![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero-v2.png)
 
 > **TL;DR:** Suffixing ports (`5432 -> 54323`) breaks above 65535. Prefix (`5432 -> 35432`) holds up for almost every common dev port. But the cleanest answer is to stop baking host ports into the committed compose file at all. Commit a `docker-compose.override.yml.example`, gitignore the real override, copy on first clone, and mark the overridden `ports:` list with `!override` so Compose replaces the base list instead of appending to it. Same pattern as `.env.example`, zero debate.
 
