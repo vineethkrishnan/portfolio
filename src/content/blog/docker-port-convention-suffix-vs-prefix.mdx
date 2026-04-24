@@ -1,81 +1,254 @@
 ---
-title: "Suffix vs Prefix: Choosing a Docker Port Convention That Actually Works"
-description: "Why our team's debate about appending digits to Docker ports ended in a 16-bit explosion, and how prepending saved the day."
+title: "Why I Stopped Arguing About Docker Port Conventions"
+description: "A colleague raised port conflicts in the daily. A suffix vote lost to the 16-bit limit. A prefix rule worked but still felt wrong. Then docker-compose.override.yml.example made the whole debate go away."
 pubDate: 2026-04-23
-tags: ["docker", "devops", "tips", "workflow"]
+tags: ["docker", "devops", "compose", "workflow"]
 draft: false
 ---
 
-# Suffix vs Prefix: Choosing a Docker Port Convention That Actually Works
+# Why I Stopped Arguing About Docker Port Conventions
 
-![A developer looking at a computer screen showing a giant red error message about port 80803, with team members debating suffix vs prefix in the background.](/blog/docker-port-convention-hero.png)
+![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero.png)
 
-> **TL;DR:** Appending a digit (suffix) to Docker ports breaks for anything over 6553. Prepending (prefix) is the way to go because it respects the 16-bit limit and keeps your sanity intact.
+> **TL;DR:** Suffixing ports (`5432 -> 54323`) breaks above 65535. Prefix (`5432 -> 35432`) holds up for almost every common dev port. But the cleanest answer is to stop baking host ports into the committed compose file at all. Commit a `docker-compose.override.yml.example`, gitignore the real override, copy on first clone, and mark the overridden `ports:` list with `!override` so Compose replaces the base list instead of appending to it. Same pattern as `.env.example`, zero debate.
 
-One fine morning, we were having our usual dev daily. The topic? Port conflicts. If you work on multiple Docker projects like we do, you know the pain. You try to start Project B, but it screams because Project A is already sitting on port 3000. 
+In the daily the other day, a colleague flagged something that had clearly been eating at them. Multiple Docker projects on the same laptop kept stepping on each other's ports. You bring one stack up, another one refuses to start because `5432` or `8080` is already taken. You go stop the first stack. You forget you needed it. Same loop, different day.
 
-So, we decided to have a convention. Every project gets a unique digit, and we just attach it to the port. Simple, right? 
+I sat there quietly because I had not run into this problem for a long time.
 
-Well, that's where the "Suffix vs Prefix" war started. 
+## The override file nobody was using
 
-## The Suffix Dream (And Why It Failed)
+For the projects I worked on, I had been keeping a gitignored `docker-compose.override.yml` next to the real compose file. Docker Compose automatically merges it on top of `docker-compose.yml`, so I got to map host ports however I wanted on my own machine without touching the committed file.
 
-Most of us liked the idea of a suffix. If the default port is 3306 for MySQL, and your project ID is 3, you just make it `33063`. It looks clean. It feels natural. 
+Mine looked roughly like this.
 
-I went ahead and tried it on our Locaboo 3 stack. I updated the `docker-compose.yml`, saved the file, and ran `docker compose up`. 
+```yaml
+# docker-compose.override.yml (gitignored)
+# Host-side port mapping. Only applies to my laptop.
+services:
+  web:
+    ports:
+      - "380:80"
+  db:
+    ports:
+      - "35432:5432"
+  mailhog:
+    ports:
+      - "38025:8025"
+      - "31025:1025"
+```
 
-And then, everything blew up.
+Zero conflicts. Zero edits to any file that goes into git. Every developer could keep their own override with whatever port scheme made sense for them.
+
+I suggested the same to the colleague. They pushed back, fairly. They wanted a solution that lived in the repository itself so that a fresh clone would just come up without every dev having to remember to create a local file. Not an unreasonable ask.
+
+So the discussion turned into: if we are going to bake it into the repo, how do we pick host ports that will not fight across projects?
+
+## The suffix idea wins the vote
+
+Someone proposed stamping each project with a single digit and appending it to the host port. If the project tag is `3`, Postgres on `5432` becomes `54323`. Clean on paper. Original port is visible at the start, project tag sits at the end like a name badge.
+
+I suggested the other way around, prefix. Not because I had a gut feeling. Because I had already used prefix on a throwaway backup-verify stack (the one from an earlier blog where I was test-restoring production backups on a laptop) and it had gone through without a single hiccup. That stack's compose file had this sort of thing:
+
+```yaml
+# backup-verify/docker-compose.yml (partial)
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "45432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "46379:6379"
+```
+
+Nothing fancy. Just prefix `4` on everything. It worked first try and I had forgotten about it until the suffix conversation came up.
+
+The majority in the meeting preferred suffix. It read nicer, they argued. Fine. I said okay, let me go apply it and see how it holds up. In my head I already had a quiet suspicion this would bite us somewhere, but I could not articulate exactly where. So I went and did it.
+
+## The moment Docker said no
+
+I went through the compose file, appended `3` to every host port, saved, and ran:
 
 ```bash
+$ docker compose up
 Error: invalid hostPort: 80803
 ```
 
-Docker just looked at me and said, "No." 
+I sat there for a good bit of time wondering what was wrong with `80803`. Then it clicked. `80803` is not a port. It cannot be a port. No port on the planet can be `80803`.
 
-## The 16-Bit Reality Check
+And that is when the suspicion turned into math.
 
-Here is the thing I (and half the team) forgot: TCP ports are 16-bit unsigned integers. That means the maximum possible port number is **65535**. 
+## The 16-bit reality check
 
-When you use the suffix approach, you are basically doing:  
-`newPort = oldPort * 10 + projectDigit`
+TCP and UDP ports are 16-bit unsigned integers. The highest valid port is `65535`. This is not a Docker rule. It is not a Linux rule. It is baked into how the protocol was designed decades ago and nothing is going to change it anytime soon.
 
-If your original port is something like `8080` (for phpMyAdmin) or `8025` (for MailHog), the math looks like this:  
-`8080 * 10 + 3 = 80803`
+Under the suffix convention you are computing:
 
-That's way over 65535. It is not just a "bad idea"—it is physically impossible for the kernel to bind that port. 
+```
+newPort = (oldPort * 10) + projectDigit
+```
 
-## Why Prefix Wins Every Time
+The moment your original port crosses `6553`, that formula spits out a number above `65535`. The kernel cannot bind it. Docker will not even accept it in the compose file.
 
-After hitting that wall, I switched to the prefix approach. Instead of appending the 3, I prepended it. 
+And here is the part that made me stop the experiment. Almost every port that matters in a typical stack sits right in that broken zone.
 
-- `8080` (original) → `38080` (prefixed)
-- `8025` (original) → `38025` (prefixed)
+```
+8080 (pgadmin, tomcat, jenkins)     ->  80803   invalid
+8081 (common alt-http)              ->  80813   invalid
+8082 (common alt-http)              ->  80823   invalid
+8025 (mailhog ui)                   ->  80253   invalid
+9000 (php-fpm, minio, portainer)    ->  90003   invalid
+9200 (elasticsearch)                ->  92003   invalid
+6379 (redis)                        ->  63793   invalid
+```
 
-Both are well under 65535. In fact, most dev ports stay under 10000, so prepending a digit (3, 4, 5) will almost always land you in a safe zone.
+The webserver on `8080`, the frontend dev ports `8081` and `8082`, MailHog, Redis, Elasticsearch. All broken under the suffix rule. The convention only survived for a small handful of lower ports like `5432`, which is probably why nobody caught it during the discussion.
 
-**Have you ever tried to explain 16-bit limits to someone who just wants their project to run? No? Good. Keep it that way.**
+Tell me I am not the only one who has watched a room vote for the thing that looked prettier and then quietly known it was going to fall over.
 
-## More Than Just Math
+## Why prefix quietly wins
 
-Beyond the "not breaking everything" part, prefixing actually feels better:
+Flip the convention and the problem goes away. Prepend the project digit instead of appending it. For a 4-digit original port you are now computing:
 
-1. **Readability:** When you see `38080`, you immediately see "phpMyAdmin on 8080" prefixed with project 3. In `80803`, the original port is buried.
-2. **Grouping:** Run `docker ps` or `lsof -iTCP | grep :3` and you see all Locaboo ports grouped together. It is beautiful.
-3. **No Brainer:** You don't have to check if the math works. Just slap the digit at the front and move on.
+```
+newPort = (projectDigit * 10000) + oldPort
+```
 
-## The Locaboo 3 Mapping
+Every one of the ports above gets a valid prefixed version:
 
-Here is what we ended up with for Locaboo 3 (using suffix 3 where it worked, but prefix everywhere else for consistency):
+```
+8080  ->  38080   valid
+8081  ->  38081   valid
+8082  ->  38082   valid
+8025  ->  38025   valid
+9000  ->  39000   valid
+9200  ->  39200   valid
+6379  ->  36379   valid
+```
 
-| Service | Original Port | Host Port (Prefix 3) | Result |
-|---------|---------------|----------------------|--------|
-| Web (HTTP) | 80 | 380 | ✅ Works |
-| MySQL | 3306 | 33306 | ✅ Works |
-| phpMyAdmin | 8080 | 38080 | ✅ Works |
-| MailHog UI | 8025 | 38025 | ✅ Works |
+No overflow. No "wait, is this port safe to suffix" moments. No quietly skipping Redis because the math does not work.
 
-So, if you are setting up a team convention for Docker ports, do yourself a favor: **Prepend, don't append.** 
+## A few other small wins
 
-If you have seen this "invalid hostPort" error before, you know the pain. Don't be like me and find out during a live demo.
+Even putting the overflow aside, prefix ends up being nicer to live with.
 
-That's it for today. Happy docking!
+The original port stays readable at the tail. `38080` parses as "something on 8080, project 3". `80803` makes you work backwards to find the original port.
+
+Every port in one project starts with the same digit. A quick `lsof -iTCP | grep :3` shows you everything for that stack in one shot. When a second project picks digit `4`, its ports group under `:4`. It is a small thing, but you look at port numbers a lot when you run more than one stack.
+
+And there is no edge case to remember. Whichever port you are mapping, prefix is fine.
+
+## One honest caveat on prefix
+
+Prefix is not a silver bullet either. If your original port is above `35535`, even prefix overflows. MongoDB on `27017` becomes `327017` with prefix `3`, which is invalid. For those you have to pick a fresh memorable port rather than applying the rule blindly. Rare enough in practice that it is a footnote, not a blocker.
+
+## The pivot: stop baking host ports into docker-compose.yml at all
+
+While I was writing up the prefix rollout, something in the back of my head kept nagging. Why are we picking one rule and forcing every developer on the project, forever, to live with it? We already solved this exact shape of problem for environment variables. Commit a `.env.example`. Gitignore the real `.env`. Each dev copies once and adjusts.
+
+Docker Compose has had the same pattern built in for years. If a `docker-compose.override.yml` sits next to your `docker-compose.yml`, Compose automatically merges it on top of the base file (see the [official docs on merging multiple compose files](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/)). So the host-side port mapping can live entirely in the override, and the override can be gitignored.
+
+The missing piece was the one `.env.example` taught us: ship a committed template so a fresh clone has a working default. That is all.
+
+## The rollout: docker-compose.override.yml.example
+
+Here is the shape of what I am rolling out to replace the whole suffix vs prefix argument.
+
+The committed base file stays clean with default host ports. A solo developer who only runs this one project can clone, `docker compose up`, and hit everything on the familiar numbers without reading any docs.
+
+```yaml
+# docker-compose.yml (committed)
+services:
+  web:
+    build: .
+    ports:
+      - "80:80"
+      - "22:22"
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - "8080:80"
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+```
+
+The template for developers running multiple projects side by side. Copy it to `docker-compose.override.yml` on first clone and tweak if you ever collide with another stack.
+
+```yaml
+# docker-compose.override.yml.example (committed)
+# Copy this to docker-compose.override.yml on first clone.
+# Change any port here if it clashes with another project on your machine.
+services:
+  web:
+    ports: !override
+      - "380:80"
+      - "322:22"
+  postgres:
+    ports: !override
+      - "35432:5432"
+  pgadmin:
+    ports: !override
+      - "38080:80"
+  mailhog:
+    ports: !override
+      - "38025:8025"
+      - "31025:1025"
+  redis:
+    ports: !override
+      - "36379:6379"
+```
+
+## The part that almost burned me: !override
+
+Notice the `!override` tag on every `ports:` list. This is the bit I nearly missed. By default, Compose merges the two files additively for list attributes. So without the tag you end up binding both `5432:5432` from the base file and `35432:5432` from the override. That drops you right back into the original port conflict with the other project's Postgres on `5432`, but now with extra confusion because the override file "looked" right.
+
+The `!override` tag tells Compose to replace the base list entirely instead of appending to it. That is exactly what we want for a host-port remap. The behaviour is called out in the [Compose file merge docs](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
+
+There is also a sibling tag, `!reset`, that clears the attribute completely. Handy when you want a service not exposed on the host at all. Say you never hit Postgres from your laptop and you want it reachable only from inside the Docker network.
+
+```yaml
+# docker-compose.override.yml (local)
+services:
+  postgres:
+    ports: !reset
+```
+
+## The rest of the rollout
+
+The real override gets gitignored.
+
+```gitignore
+# .gitignore
+docker-compose.override.yml
+```
+
+And the first-clone flow becomes the same muscle memory as `.env`.
+
+```bash
+cp .env.example .env
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up
+```
+
+That is the whole rollout. No vote. No suffix vs prefix. No 16-bit math nobody remembers until it breaks.
+
+## The takeaway
+
+The suffix versus prefix debate was not wasted. It taught me that Docker host ports are not just strings, they are 16-bit integers with a hard ceiling, and that suffix will quietly die above `6553`. Prefix is the safer of the two if you have to pick.
+
+But the real takeaway is that you probably should not be picking. Commit a `docker-compose.override.yml.example`, gitignore the real override, and let developers copy on first clone. Same pattern every backend already uses for `.env`. Clean committed file, safe defaults for a fresh clone, full freedom on each laptop, zero meetings.
+
+That is pretty much it from my side today. Let me know what you think, or if your team landed on a completely different pattern. Those stories are always the best ones. See you soon in the next blog.
