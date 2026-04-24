@@ -10,7 +10,7 @@ draft: false
 
 ![Two cartoon Docker whales fighting over a single yellow port panel with tangled cables, illustrating two containers trying to bind the same host port](/blog/docker-port-convention-hero.png)
 
-> **TL;DR:** Suffixing ports (`5432 -> 54323`) breaks above 65535. Prefix (`5432 -> 35432`) holds up for almost every common dev port. But the cleanest answer is to stop baking host ports into the committed compose file at all. Commit a `docker-compose.override.yml.example`, gitignore the real override, copy on first clone. Same pattern as `.env.example`, zero debate.
+> **TL;DR:** Suffixing ports (`5432 -> 54323`) breaks above 65535. Prefix (`5432 -> 35432`) holds up for almost every common dev port. But the cleanest answer is to stop baking host ports into the committed compose file at all. Commit a `docker-compose.override.yml.example`, gitignore the real override, copy on first clone, and mark the overridden `ports:` list with `!override` so Compose replaces the base list instead of appending to it. Same pattern as `.env.example`, zero debate.
 
 In the daily the other day, a colleague flagged something that had clearly been eating at them. Multiple Docker projects on the same laptop kept stepping on each other's ports. You bring one stack up, another one refuses to start because `5432` or `8080` is already taken. You go stop the first stack. You forget you needed it. Same loop, different day.
 
@@ -156,49 +156,77 @@ The missing piece was the one `.env.example` taught us: ship a committed templat
 
 Here is the shape of what I am rolling out to replace the whole suffix vs prefix argument.
 
-The committed base file stays clean. No host-side ports at all, just the container-side ones needed for health checks or internal networking.
+The committed base file stays clean with default host ports. A solo developer who only runs this one project can clone, `docker compose up`, and hit everything on the familiar numbers without reading any docs.
 
 ```yaml
 # docker-compose.yml (committed)
 services:
   web:
     build: .
-    expose:
-      - "80"
+    ports:
+      - "80:80"
+      - "22:22"
   postgres:
     image: postgres:16
-    expose:
-      - "5432"
+    ports:
+      - "5432:5432"
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - "8080:80"
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"
+      - "1025:1025"
   redis:
     image: redis:7
-    expose:
-      - "6379"
+    ports:
+      - "6379:6379"
 ```
 
-The template file, committed with a sensible default mapping using prefix `3` (the lesson we still keep from the detour above).
+The template for developers running multiple projects side by side. Copy it to `docker-compose.override.yml` on first clone and tweak if you ever collide with another stack.
 
 ```yaml
 # docker-compose.override.yml.example (committed)
 # Copy this to docker-compose.override.yml on first clone.
-# Change any port here if it collides with another project on your machine.
+# Change any port here if it clashes with another project on your machine.
 services:
   web:
-    ports:
+    ports: !override
       - "380:80"
+      - "322:22"
   postgres:
-    ports:
+    ports: !override
       - "35432:5432"
   pgadmin:
-    ports:
+    ports: !override
       - "38080:80"
   mailhog:
-    ports:
+    ports: !override
       - "38025:8025"
       - "31025:1025"
   redis:
-    ports:
+    ports: !override
       - "36379:6379"
 ```
+
+## The part that almost burned me: !override
+
+Notice the `!override` tag on every `ports:` list. This is the bit I nearly missed. By default, Compose merges the two files additively for list attributes. So without the tag you end up binding both `5432:5432` from the base file and `35432:5432` from the override. That drops you right back into the original port conflict with the other project's Postgres on `5432`, but now with extra confusion because the override file "looked" right.
+
+The `!override` tag tells Compose to replace the base list entirely instead of appending to it. That is exactly what we want for a host-port remap. The behaviour is called out in the [Compose file merge docs](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
+
+There is also a sibling tag, `!reset`, that clears the attribute completely. Handy when you want a service not exposed on the host at all. Say you never hit Postgres from your laptop and you want it reachable only from inside the Docker network.
+
+```yaml
+# docker-compose.override.yml (local)
+services:
+  postgres:
+    ports: !reset
+```
+
+## The rest of the rollout
 
 The real override gets gitignored.
 
