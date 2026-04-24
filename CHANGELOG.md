@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.24](https://github.com/vineethkrishnan/portfolio/compare/v0.0.23...v0.0.24) (2026-04-24)
+
+
+### Documentation
+
+* **blog:** add per-repo wiki story post ([#50](https://github.com/vineethkrishnan/portfolio/issues/50)) ([5436e69](https://github.com/vineethkrishnan/portfolio/commit/5436e694b0cf8b6ee507bf7999da82c90dd82575))
+* **blog:** rename port convention hero to bust dev.to cache ([#48](https://github.com/vineethkrishnan/portfolio/issues/48)) ([526c742](https://github.com/vineethkrishnan/portfolio/commit/526c742f699b4418faf60b23f709958455dfbb16))
+
 ## [0.0.23](https://github.com/vineethkrishnan/portfolio/compare/v0.0.22...v0.0.23) (2026-04-24)
 
 
