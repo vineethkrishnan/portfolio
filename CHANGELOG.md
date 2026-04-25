@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.26](https://github.com/vineethkrishnan/portfolio/compare/v0.0.25...v0.0.26) (2026-04-25)
+
+
+### Documentation
+
+* **blog:** add local FLUX setup walkthrough on mac ([#53](https://github.com/vineethkrishnan/portfolio/issues/53)) ([9f86d30](https://github.com/vineethkrishnan/portfolio/commit/9f86d3050ffb7b6ff3f3ab15efae2f34f219e505))
+
 ## [0.0.25](https://github.com/vineethkrishnan/portfolio/compare/v0.0.24...v0.0.25) (2026-04-25)
 
 
