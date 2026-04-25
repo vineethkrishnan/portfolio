@@ -1,0 +1,92 @@
+---
+title: "Cross-Posting My Blog to dev.to and Hashnode: What I Got Wrong"
+description: "I figured cross-posting my Astro blog to dev.to and Hashnode would take an afternoon. It turned into four PRs, three failure modes, and a few API surprises."
+pubDate: 2026-04-25
+tags: ["blog", "automation", "github-actions", "devops", "self-hosting"]
+draft: false
+---
+
+# Cross-Posting My Blog to dev.to and Hashnode: What I Got Wrong
+
+![Flat illustration of a developer at a desk watching a single blog post split into multiple copies flowing through pipes to different destinations, with a couple of pipes leaking gently, soft warm colors.](/blog/cross-posting-blog-hero.png)
+
+**TL;DR** - Setting up auto-syndication from my Astro blog to dev.to and Hashnode looked like a one-afternoon job. It turned into four pull requests, mostly because real APIs have rate limits, partial failures, and opinions about where you should keep state. Here is everything that broke after I shipped, and how I fixed each one.
+
+## Why I bothered with this in the first place
+
+My blog lives on my own site. That is the source of truth, that is where the canonical URL lives, that is where I want readers to actually land. Problem is, almost nobody reads a personal portfolio blog directly. The two clicks it gets are usually from whoever I forwarded the link to on the family WhatsApp group. The actual traffic is on dev.to and Hashnode.
+
+So I needed to syndicate. Syndicate just means publishing the same post on multiple platforms, with one of them marked as the canonical original. My site stays the source of truth. dev.to and Hashnode get copies that link back to it. Search engines see the link and treat my version as the original, so the copies do not get penalised as duplicate content.
+
+I could copy-paste each post to both platforms by hand. I have done it before. It is the kind of task that should be quick, except every time you sit down to do it you are pasting markdown, fixing image links, picking tags, hitting publish, and then doing the whole thing again on the second platform. By the third post, I knew I was never going to keep this up.
+
+So I sat down one weekend to write a small script that would do it for me on every push to main. How hard could it be.
+
+## The first ship: a small script and a workflow
+
+The plan was simple. A Node script (`scripts/syndicate.mjs`) reads any new MDX file under `src/content/blog/`, parses the frontmatter, rewrites image paths to absolute URLs pointing back to my site, and posts the result to both platforms. dev.to has a normal REST API. Hashnode is GraphQL. Both let you set a canonical URL (`canonical_url` on dev.to, `originalArticleURL` on Hashnode) so search engines know my site is the original and not the copy.
+
+A GitHub Actions workflow runs the script on every push to main that touches the blog folder. To avoid re-publishing the same post over and over, the script keeps a state file called `.syndication.json` with a content hash for each post and the IDs returned by each platform.
+
+I shipped this in the first PR. Tested it on one post. Both platforms accepted it. Canonical URLs pointed back home. I closed my laptop and felt clever.
+
+The cleverness lasted about a day.
+
+## Break one: partial failures
+
+The first time the workflow ran on a real push, dev.to accepted the post, then the Hashnode call failed for some reason that I no longer remember. The script crashed before writing the state file. So as far as the next run was concerned, the post had never been syndicated anywhere.
+
+You can guess what happened next. I pushed an unrelated commit, the workflow ran again, and it cheerfully created a brand new dev.to article on top of the one already there. Now I had two copies on dev.to and zero on Hashnode. Wonderful.
+
+The fix was a reconciliation step at the start of every run. Before doing any writes, the script now lists all the existing articles on each platform via their APIs, matches them to my blog posts using the canonical URL, and stitches the existing IDs back into state. So even if the state file gets nuked or a previous run died halfway, the script knows what is already out there. On the next run it sees "this slug already has a dev.to ID" and does an update instead of a create.
+
+The lesson here was annoying but obvious in hindsight. Any script that talks to two systems in sequence will eventually fail between them. You either need atomic writes across both, which is impossible with two separate APIs, or you need to make the script self-healing on the next run. I went with the second one.
+
+## Break two: dev.to and the 429 wall
+
+A while later I tried to do a small backfill, syndicating a few older posts in one workflow run. dev.to rejected the second one with a 429. Then the third with a 429. Then it just kept failing.
+
+It turns out dev.to has a fairly aggressive rate limit on creating new articles, and the public docs are quiet about the exact numbers. The only useful signal is the `Retry-After` header on the 429 response, which tells you how many seconds to wait before trying again.
+
+Tell me I am not the only one who learns about API rate limits from production. The kind that do not show up until you run the thing in anger.
+
+The fix did two things. One, an in-request retry loop on 429 that honours `Retry-After` with a sensible fallback, and that gives up after a few attempts. Two, a small pause between writes when the script is processing more than one post in a single run. It is a conservative ten-second sleep, but the syndication side of my blog is not a real-time system, so a few extra seconds per post does no harm.
+
+## Break three: where do you actually keep the state file
+
+This is the one that took the longest to get right. The state file is small, but someone needs to keep it between runs. Where?
+
+My first instinct was the obvious one. Commit it back to the repo. The workflow runs, syndicates the post, then opens a small commit with the updated state. Simple. Except now every successful syndication created a "chore: update syndication state" commit on main, which is noisy. And the default `GITHUB_TOKEN` does not trigger downstream workflows when it pushes, which is fine, but I still felt uncomfortable mixing bot commits into my own history.
+
+So I pulled in a GitHub App, gave it just enough permission to push the state file, and used its token for the commit. That worked. But the commits were still ugly. Every push to main produced a sibling state-update commit a moment later. My git log started looking like a chat between me and a robot.
+
+The next PR finally moved state into GitHub Actions cache. The cache is keyed per workflow, persists between runs, and most importantly does not show up in git history at all. The cache key uses the run ID for writes, with a `restore-keys` fallback so the next run picks up whatever the last run left behind.
+
+```yaml
+- name: Restore syndication state cache
+  uses: actions/cache@v4
+  with:
+    path: .syndication.json
+    key: syndication-state-v1-${{ github.run_id }}
+    restore-keys: syndication-state-v1-
+```
+
+Caches can be evicted, sure. But that is exactly why the reconciliation step from break one matters so much. If the cache disappears, the next run rebuilds state by listing what is already on dev.to and Hashnode. The two fixes ended up reinforcing each other, which was a nice surprise.
+
+## What I would tell past me
+
+Three things, looking back.
+
+One, do not store anything in your repo that does not need history. State files are not history. They are checkpoints. Use a cache, a database, or even an external KV. Anything but git.
+
+Two, when you talk to two APIs in a row, you will eventually fail between them. Plan for it from the start. Either pick a single source of truth on each platform and reconcile against it, or make sure your "did it succeed" check is independent of in-memory state.
+
+Three, every public API has rate limits. The good ones publish them. The rest, you find by writing a backfill script and getting smacked by a 429. Read the rate limit docs before you scale up, not after.
+
+## Where it stands now
+
+Right now this script syndicates to dev.to and Hashnode only. That covers the two platforms where my readers actually are. I have thought about adding Medium, but their API has its own ceremonies and I am not sure the audience overlap justifies it yet. Maybe later.
+
+Either way, the saga is at a stopping point. Posts auto-syndicate on push, partial failures self-heal on the next run, rate limits get retried with backoff, and my git log no longer has a robot living in it. That feels about right for what was meant to be an afternoon job.
+
+So yeah, that is my take. Yours might be completely different, and that is exactly what makes this whole space interesting. Catch you in the next blog - should not be too long from now.
