@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.25](https://github.com/vineethkrishnan/portfolio/compare/v0.0.24...v0.0.25) (2026-04-25)
+
+
+### Documentation
+
+* **blog:** add cross-posting syndication saga post ([#51](https://github.com/vineethkrishnan/portfolio/issues/51)) ([6db252f](https://github.com/vineethkrishnan/portfolio/commit/6db252f0d188b6f8cc68dea20b1fe258572a64bc))
+
 ## [0.0.24](https://github.com/vineethkrishnan/portfolio/compare/v0.0.23...v0.0.24) (2026-04-24)
 
 
