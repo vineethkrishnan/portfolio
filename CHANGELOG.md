@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.27](https://github.com/vineethkrishnan/portfolio/compare/v0.0.26...v0.0.27) (2026-04-27)
+
+
+### Documentation
+
+* **blog:** add post on sed hotfix and require cache lesson ([#55](https://github.com/vineethkrishnan/portfolio/issues/55)) ([939d557](https://github.com/vineethkrishnan/portfolio/commit/939d557c0fcddee8fe38ea1758eb289d011ee961))
+
 ## [0.0.26](https://github.com/vineethkrishnan/portfolio/compare/v0.0.25...v0.0.26) (2026-04-25)
 
 
