@@ -1,0 +1,195 @@
+---
+title: "The sed that didn't stick"
+description: "A failing nightly backup, a sed hotfix that worked once, and the next morning's cron that failed anyway. Node's require cache had eaten my patch."
+pubDate: 2026-04-27
+tags: ["docker", "node", "backup", "ops", "open-source"]
+draft: false
+---
+
+# The sed that didn't stick
+
+![A man at a wooden desk staring at his MacBook Air as a list of project backups runs on screen, one row at the bottom marked FAILED in red, warm desk lamp light.](/blog/sed-hotfix-hero.png)
+
+**TL;DR** - The nightly backup on one of my self-hosted servers kept failing. I patched the running container with a single `sed` command, ran the backup by hand, watched it succeed, and went to bed thinking I had it. The next morning's cron run failed all over again. Node's `require` cache had quietly held on to the version it had loaded into memory at container start, and never read the patched file from disk. Fixing it the proper way then exposed a second problem: my production runtime image strips `npx` for safety, so the upgrade migration step fell over the moment it had something to do. This is the story of both, and the small migrator Docker stage I added so neither one bites me again.
+
+## The cron that kept failing
+
+So there I was, opening the audit log on a quiet morning expecting another row of green ticks. Instead, a wall of red.
+
+```
+Command "pg_dump" failed: Command failed: pg_dump --host postgres
+  --port 5432 --username psql-user --dbname myapp
+  --format=custom --file /data/backups/myapp/myapp_backup_20260418_040000.dump
+```
+
+Same error every night. The database in question was around 2 GB, not huge by anyone's standards but big enough that on a slow link the dump would crawl. The pattern made sense once I saw it. `pg_dump` would start, run for a while, and then `backupctl` would kill it because my own tool had a five-minute child-process timeout baked in.
+
+So that part was easy to diagnose. My helper had a `timeout = 300000` sitting in the compiled JS at `/app/dist/common/helpers/child-process.util.js`, and the real fix was to bump that number, recompile, and ship a new image.
+
+I did not have time for a release cycle that night.
+
+## The sed that worked, for exactly one run
+
+Here is what I reached for, the way you would reach for a screwdriver in your kitchen drawer.
+
+```bash
+docker exec -i backupctl \
+  sed -i 's/timeout = 300000/timeout = 1800000/' \
+  /app/dist/common/helpers/child-process.util.js
+```
+
+Five minutes to thirty. One line. No restart, no rebuild, no release. I ran `backupctl run myapp` from the host. It chugged along for a bit, finished cleanly, the restic snapshot landed on the storage box, the Slack message fired, a clean green row in the audit table. I closed the laptop.
+
+The next morning, the 4 AM cron had failed. Same error. Same dump file. Same five-minute kill.
+
+I went back and checked the file inside the container. The patched line was *still there*. `sed` had done its job. The 1800000 was sitting in the bytes on disk. The scheduler running inside the same container was somehow ignoring it.
+
+Tell me I am not the only one who has stared at a file with the right content while the running process insists it is wrong.
+
+## Why the manual run worked but the cron did not
+
+The thing I had not been thinking about, and should have been, is how Node loads code.
+
+When the `backupctl` container starts, NestJS boots up, and along the way Node reads `child-process.util.js` from disk and parses it into memory. The `require()` call that pulled it in is cached, by module path, for the lifetime of that process. From that point on, every other file inside the running app that asks for the helper gets the same in-memory object back. The disk version stops mattering.
+
+`sed` had patched the disk. The long-running scheduler process inside the container was still using the parsed-and-cached version it had loaded at container start. It would happily go on using that cached version until the process died.
+
+The reason the manual `backupctl run` had worked is the part I had missed at the time. The CLI command does not run inside the long-lived NestJS process. It spawns a fresh Node process, which loads the helper from disk, which is the patched version. So the manual run picked up the new timeout. The scheduler, sitting in the long-running process from before the patch, never did.
+
+Two different processes. Same container. Same file on disk. Different versions in memory.
+
+## What I should have done from the start
+
+The proper fix was boring. Pull the next release that had the timeout configurable, restart the container so the scheduler picks up the new code, done.
+
+`backupctl-manage.sh upgrade` is the script I have for exactly this. Pull the new image, run any migrations, recreate the container, run a smoke test, fire a notification. So I ran it.
+
+And then the next thing broke.
+
+## The second surprise: npx, missing in action
+
+The upgrade script chugged through its checklist, and then died on this:
+
+```
+[5/7] Running database migrations
+OCI runtime exec failed: exec failed: unable to start container process:
+  exec: "npx": executable file not found in $PATH: unknown
+```
+
+For a moment I thought I had pulled the wrong image. I had not. The error was perfectly correct.
+
+A while back, when I was tightening up the production Docker image, I had added a line near the end of the runtime stage that strips npm and npx out of the final layer. Something close to this in the Dockerfile:
+
+```dockerfile
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
+```
+
+The reasoning was simple enough. Production does not need a package manager. Pulling npm out makes the runtime image smaller, and gives anyone who breaks into it less to work with. Both genuine wins.
+
+Except my migration step was literally this:
+
+```bash
+docker exec backupctl npx typeorm migration:run -d dist/db/datasource.js
+```
+
+The script had been written before the npm strip. The two of them had never met in the wild because there had not been any new migrations to run since I added the strip. The first time the upgrade actually had something to migrate, the strip would have eaten my migration step alive. I got lucky on this run too. When I checked the audit DB, both migrations the new image carried were already applied. The runner would have been a no-op even if it had worked. Pure luck.
+
+So my migration step had been quietly broken for who knows how long. That stops being acceptable the moment the next release actually adds a migration.
+
+## The migrator stage
+
+The fix I went with is a separate Docker stage, sitting beside the runtime image, that exists only to run migrations.
+
+Here is the shape of it inside the same Dockerfile:
+
+```dockerfile
+# Migrator stage: kept around so production migrations have npm/npx
+FROM node:20-alpine3.22 AS migrator
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules/
+COPY --from=builder /app/dist ./dist/
+CMD ["npx", "typeorm", "migration:run", "-d", "dist/db/datasource.js"]
+```
+
+It reuses the install and build stages. It still has npm and npx because nothing strips them. It is opt-in via a Compose profile, so the default `docker compose up -d` does not start it. It runs once, exits, and gets cleaned up:
+
+```yaml
+services:
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    profiles: ["migrate"]
+    restart: "no"
+    # ...env, network, depends_on
+```
+
+And the upgrade script changed from this:
+
+```bash
+docker exec backupctl npx typeorm migration:run -d dist/db/datasource.js
+```
+
+To this:
+
+```bash
+docker compose --profile migrate run --rm --build migrator
+```
+
+`--profile migrate` activates the new service. `run --rm` boots a one-off container, lets it run the migrations, and removes it on exit. `--build` makes sure the migrator image is fresh against whatever release the upgrade is rolling out. Same one-line invocation, but now backed by an image that actually has the tools it needs.
+
+One small detail I tripped on while wiring this up. I had originally added `container_name: backupctl-migrator` to the Compose service. `docker compose run --rm` generates its own ephemeral container name, and a hard-coded `container_name` will trip over itself the moment a previous run lingers. Drop the field, let Compose name the container, problem gone.
+
+## Manual in dev, automatic in prod, on purpose
+
+There is one detail I want to call out, because it took me a beat to get comfortable with.
+
+In dev, I do not auto-run migrations. I have a tiny helper at `scripts/dev.sh migrate:run` that I call myself when I am ready. Sometimes I want to inspect a migration before it touches my local database. Sometimes I am rebasing a branch and the migration files are temporarily messy. The dev workflow leaves that decision to me, which is what I want for a workflow I touch every day.
+
+In production, the deploy and upgrade scripts auto-run the migrator service. I do not want a half-asleep version of me, in the middle of an incident, to forget the manual migration step. The cost of accidentally running a no-op migration is zero. The cost of forgetting one is downtime.
+
+Same domain, same migrations, same tool. Different harness on each end. It used to feel like a wart. Today I would call it the right shape. Humans get to choose in dev because choosing is cheap there, and machines do the safe thing in prod because forgetting is expensive.
+
+## The follow-up: a timeout you can actually configure
+
+The migrator stage closed the loop on the upgrade side. The original problem, though, was a hard-coded five-minute child-process timeout. Even with the upgrade landed, that number was still going to bite the next project that grew past it.
+
+A handful of commits later, I made the dump timeout per-project. The same YAML that already names the database now takes an optional `dump_timeout_minutes`:
+
+```yaml
+projects:
+  - name: myapp
+    cron: '0 3 * * *'
+    timeout_minutes: 30
+    database:
+      type: postgres
+      host: postgres
+      name: appdb
+      user: appuser
+      password: ${APP_DB_PASSWORD}
+      dump_timeout_minutes: 120
+```
+
+The resolution order is deliberate. `database.dump_timeout_minutes` wins first, `timeout_minutes` next, the safe default last. A small project gets the default and never thinks about it. A medium project bumps `timeout_minutes` for the whole run. A heavy one with a slow link sets `dump_timeout_minutes` on just that database, without inflating the warning timer for everything else.
+
+Paired with that, a `--verify-dump` flag on the dry-run path. Plain `--dry-run` only checks config and database connectivity. With `--verify-dump`, the tool actually runs the dumper into a temp directory, verifies the file integrity, reports the duration and size, then cleans up:
+
+```bash
+backupctl run myapp --dry-run --verify-dump
+```
+
+If a project's database needs longer than the configured timeout, this is where you see it. On your terms, in a dry-run report you ran on purpose. Not in a 4 AM cron failure you find out about over coffee. The change I most wish I had made before the original incident.
+
+## Two short lessons, then I am out
+
+If you are reading this and you are one `sed` away from doing exactly what I did, here is what I want you to take with you.
+
+**A patch on disk is not a patch in a running Node process.** If you `sed` a `.js` file inside a long-running container, the only thing that will pick up the change is a fresh process. The scheduler that has been holding `child-process.util.js` in its require cache since boot does not care what your bytes look like now. Restart the container. Or, better, do not patch live containers in the first place.
+
+**A stripped runtime image needs a thinking partner.** If you have removed npm and npx from production for sensible reasons, you have also removed every script that was quietly assuming they were there. Migrations are the obvious one. Make a separate stage that has the tools, profile-gate it so it does not run when you do not want it to, and let your deploy script call it on purpose.
+
+That is pretty much it from my side today. Let me know what you think, or if you have been through something similar with a hotfix that quietly refused to take. Those stories are always the best ones. See you soon in the next blog.
