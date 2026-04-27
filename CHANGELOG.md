@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.28](https://github.com/vineethkrishnan/portfolio/compare/v0.0.27...v0.0.28) (2026-04-27)
+
+
+### Bug Fixes
+
+* **theme:** make code snippets visible in minimal theme ([#58](https://github.com/vineethkrishnan/portfolio/issues/58)) ([fb0d7b9](https://github.com/vineethkrishnan/portfolio/commit/fb0d7b93801e5e7ee5681ea11a84a29ecb2f7f42))
+
 ## [0.0.27](https://github.com/vineethkrishnan/portfolio/compare/v0.0.26...v0.0.27) (2026-04-27)
 
 
