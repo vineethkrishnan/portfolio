@@ -1,0 +1,185 @@
+---
+title: "The Sentry signup nobody could finish"
+description: "A colleague signed up on our self-hosted Sentry and never got the email. I had been getting Sentry mail forever, so I assumed he was missing something. He was not. DMARC was silently dropping every message to our Workspace inboxes, and the 'workaround' I shared with him broke too. Here is the bug, the lie my inbox had been telling me, and the shell command that finally got him in."
+pubDate: 2026-04-28
+tags: ["sentry", "self-hosted", "dmarc", "smtp", "ops"]
+draft: false
+---
+
+# The Sentry signup nobody could finish
+
+![2 envelopes flying toward 2 different houses at sunset, one slipping cleanly through an open mail slot of a small cottage, the other being silently bounced back from a stern security gate of a fortified mansion, cinematic illustration, warm side light, soft depth of field.](/blog/sentry-invite-skipped-gmail-hero.png)
+
+**TL;DR** - A teammate pinged me on Slack saying he had signed up on our self-hosted Sentry but never got the verification email. I assumed PEBKAC because I had been receiving Sentry mail just fine for as long as I could remember. So I went and signed up myself from a Workspace account, and sure enough, nothing arrived. The bundled Exim container in our Sentry stack had been failing DMARC against every strict mail provider for a long time. 26 frozen messages were sitting in the queue waiting to bounce. The reason I had never noticed is that my own mailbox is on a lenient provider that does not enforce DMARC, so I had been getting Sentry mail the whole time while everyone else got nothing. The shell trick I used to get my own account in worked beautifully. The same trick for my teammate did not. This post is the whole arc, ending in the one shell command that actually got him in.
+
+## The ping
+
+It was a perfectly ordinary message on Slack from a colleague.
+
+> "I signed up on our self-hosted Sentry but I am not getting any email."
+
+I almost told him to check spam. Sentry sends mail to me regularly, my weekly reports show up, alert emails show up, password reminders show up. So my first instinct was that he had typed the wrong address or his Workspace was filing things into a folder he had not opened.
+
+Before I sent that reply I caught myself. He is not new to email. He had checked the obvious places. If a teammate tells you twice that an email is not arriving, the email is not arriving.
+
+So I went and looked.
+
+## What was actually happening on the Sentry box
+
+Self-hosted Sentry runs its own little mail stack inside the Compose file. There is a bundled `smtp` service that is just an Exim container. The `web` and `worker` containers hand outbound mail to it, and Exim delivers direct-to-MX for whatever recipient domain the message is bound to. Out of the box, no relay, no authentication, no DKIM signing.
+
+A read-only walk through the running stack confirmed exactly that.
+
+```bash
+docker compose exec -T web sentry config get mail.backend
+docker compose exec -T web sentry config get mail.host
+docker compose exec -T web sentry config get mail.from
+```
+
+`mail.backend` was `smtp`. `mail.host` was literally `smtp`, the bundled Exim container in the same Compose file. `mail.from` was `sentry@mycompany.com`. So Sentry was handing every outbound message to local Exim, which was then trying to deliver it itself, with no authenticated relay anywhere in the picture.
+
+The Exim main.log made the rest of the story clear in 3 lines.
+
+```
+** signup-user@mycompany.com
+   R=dnslookup T=remote_smtp H=aspmx.l.google.com
+   550-5.7.26 Unauthenticated email from mycompany.com is not accepted
+              due to domain's DMARC policy.
+```
+
+Google was rejecting the message at SMTP time. The reason given was DMARC. To know what that meant in our case I had to pull 3 TXT records.
+
+```bash
+dig +short TXT mycompany.com
+dig +short TXT _dmarc.mycompany.com
+dig +short TXT default._domainkey.mycompany.com
+```
+
+What came back is the strictest DMARC configuration you can ship.
+
+```
+SPF:    v=spf1 include:_spf.google.com include:<a few marketing
+        and ticketing services we use> ~all
+DMARC:  v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s; pct=100; ...
+DKIM:   (a key, but only for Google's selector)
+```
+
+`p=reject` means "drop anything that fails". `pct=100` means "every message, no sampling". `adkim=s` and `aspf=s` mean "the From domain has to align exactly". And SPF lists Google plus a couple of outbound services as the only authorised senders. Our Sentry server is not in any of those includes. The bundled Exim does not DKIM-sign. So mail leaving Sentry has neither a passing SPF nor a passing DKIM, and DMARC drops it on the floor. That is exactly what the `550-5.7.26` line was telling me.
+
+## The bounces piling up sideways
+
+There was a second mess sitting next to the first. The Exim queue was holding 26 "frozen" messages.
+
+```bash
+docker compose exec smtp exim -bp | head
+```
+
+Frozen, in Exim speak, means "I tried to deliver this and gave up, and I cannot even bounce it back to the sender". The original signup mails had `MAIL FROM: sentry@mycompany.com`. That mailbox does not exist on our Workspace. So when Google rejected the original message, Exim dutifully tried to send a Delivery Status Notification to `sentry@mycompany.com`, and Google rejected that too with `550-5.1.1 ... NoSuchUser`. The DSNs had nowhere to go, and Exim parked them.
+
+2 independent failures wearing the same costume. Outbound mail failing DMARC. Inbound bounce notifications failing because the configured From has no mailbox. 26 of them sitting in line.
+
+## The lie my inbox had been telling me
+
+This is the part I want to dwell on.
+
+I had been receiving Sentry email forever. Weekly reports. Alert pings. Everything. So when a colleague said he was not getting mail, my prior was strongly that something on his side was wrong.
+
+Both things were true at the same time. Sentry was sending mail. Sentry was failing DMARC against every strict provider. The reason I was getting it and he was not is that my personal mailbox sits on a small mail host that does not enforce DMARC strictly. It accepts unauthenticated mail. Google does not. So I had a working pipe to my own inbox and a completely broken pipe to every Workspace inbox in the company, and there was no symptom anywhere I would have looked.
+
+Tell me I am not the only one who has assumed something works because it works *for me*, and missed a problem the rest of the team has been quietly living with for months.
+
+To prove this to myself I tried the signup flow again from a Workspace account I have access to. Same outcome. No email. Exim log showed the same DMARC reject line. The colleague was right. This had been broken for everyone except me.
+
+## The fix I could not apply
+
+The clean answer is the obvious one. Stop sending direct-to-MX. Send through an authenticated relay that is allowed to sign mail for `mycompany.com`. Google Workspace SMTP relay, SendGrid, Mailgun, anything that authenticates on the way in and DKIM-signs on the way out. With that in place, SPF passes, DKIM passes, DMARC aligns, Google delivers, life is good.
+
+What that needs from me is admin access to the Workspace console and the DNS provider. I have neither. Both are locked down on a separate account, which means the proper fix is a ticket through someone else's queue. The colleague waiting to get into Sentry does not particularly care about the reasons.
+
+So I went looking for a way to onboard him today, by hand, while the proper email fix waits its turn.
+
+## Pulling the invite token out of Sentry directly
+
+Self-hosted Sentry's UI sometimes shows a "Copy invite link" action on each pending invite. On our version it does not. Only "Resend" is exposed. So you reach for the shell. Sentry has a pending invite stored as an `OrganizationMember` row, complete with an unused token. You can read that out and assemble the accept URL yourself.
+
+```bash
+docker compose exec -T web sentry exec - <<'PY'
+from sentry.models.organizationmember import OrganizationMember
+
+email = "me@mycompany.com"
+
+members = OrganizationMember.objects.filter(email=email, user_id__isnull=True)
+for member in members:
+    print(f"org={member.organization.slug}  id={member.id}")
+    print(f"link={member.get_invite_link()}")
+PY
+```
+
+`sentry exec -` runs a Python snippet against the Sentry web process without dropping you into the interactive shell. The filter `user_id__isnull=True` keeps it to invites that have not been accepted yet. The output is the URL you would have received in the email.
+
+```
+org=mycompany  id=16
+link=https://sentry.mycompany.com/accept/16/<token>/
+```
+
+I built the URL, opened it in the Workspace account I had been testing with, and got into Sentry. The accept link redirected to a login page, the page showed a Register tab next to Sign in, I registered through it, and the pending invite auto-bound to my new user on signup. Total time about 5 minutes. Treat the URL like a credential, by the way, because anyone with it can claim that membership until used.
+
+That worked, so I did the same for the teammate. Pulled his invite link from the same shell. Sent it on a private DM. Calmly went back to my day-to-day work.
+
+## When the same trick failed for the next person
+
+The Slack ping came back fairly quickly.
+
+> "It is not working. There is no Register or Signup option."
+
+He sent a screenshot.
+
+He was right. The link took him to the login page and there was nowhere to register. The same URL shape that had worked for me had no Register tab on his side. I rotated the token. Same thing. Created a fresh invite. Same thing. Whatever flow had worked for me 20 minutes ago was just not appearing for him.
+
+I will be honest, this is where I sat back in my chair. We had already burnt enough time on this. The clean thing to do was stop trying to make the invite flow work and just create his account directly. He could change the password the moment he got in.
+
+So I told him I would set him up on the server side and DM him a temp password.
+
+## The conflict in the database
+
+Before running `createuser` I went back into the Sentry shell to see why the link approach had refused to play ball. Looking at the rows for his email, there were extra entries. Old `OrganizationMember` rows from earlier invite attempts, in a state that was confusing the accept flow. The token I had pulled was for the most recent row, but the older rows were tangled up in there too, and Sentry was not reliably attaching the invite token to the session in the redirect.
+
+I cleaned up the duplicates first. One pending member row, no orphaned entries, no half-claimed users.
+
+Then ran the one command that would have saved me an hour if I had reached for it sooner.
+
+```bash
+docker compose exec -T web sentry createuser \
+    --email mycolleague@<workspace>.com \
+    --password '<temp password>' \
+    --no-superuser
+```
+
+That created the user account directly. Active, password set, ready to log in. No email, no token, no redirect dance. Sentry sees the matching email on first login, finds the pending OrganizationMember row, binds them automatically, and the user shows up as a normal member with the role from the original invite.
+
+A quick sanity check after that, just to be sure I had not left any stale state behind.
+
+```python
+from sentry.models.user import User
+from sentry.models.useremail import UserEmail
+from sentry.models.organizationmember import OrganizationMember
+
+email = "mycolleague@<workspace>.com"
+print("users:", User.objects.filter(email=email).count())
+print("user_emails:", UserEmail.objects.filter(email=email).count())
+print("members:", OrganizationMember.objects.filter(email=email).count())
+```
+
+One of each. Clean state. I sent him the login URL, the email, and the temp password on a DM, told him to change the password from Account Settings the moment he got in. He did. Account works. Project access works. Done.
+
+## What I am taking away
+
+3 things, then I am out.
+
+**A self-hosted thing that sends mail "directly" is a half-broken thing.** The bundled Exim container in self-hosted Sentry will keep dispatching messages forever, and a benevolent ISP-grade mail host will keep accepting some of them, and you will keep believing things work. They do not. The first day a Workspace user needs an email from it, the whole thing falls apart. If you run anything self-hosted that sends email, point it at an authenticated relay on day one, even if you "do not need email yet". You will, and finding out at 3 in the afternoon is not the moment to set up SPF.
+
+**"It works for me" can be a lie your own inbox is telling you.** Strict DMARC enforcement is a per-recipient choice. If your "evidence" of working email is one mailbox on a lenient provider, that is not evidence at all, that is survivorship bias. To check whether your mail setup is healthy, send a test message to a Gmail or a Microsoft 365 address and read the headers. The `Authentication-Results` line will tell you immediately whether SPF, DKIM and DMARC pass.
+
+**Reach for `createuser` sooner.** When the pretty invite-link flow refuses to cooperate, do not spend an hour rotating tokens and chasing redirects. Self-hosted apps almost always have a backdoor command that does the thing directly. `sentry createuser`, plus a quick check that the database does not have stale rows, would have saved me a chunk of time. I will reach for it first next time.
+
+So that is where I will stop on this one. If you have a different way of catching this kind of silent regression in your own self-hosted setup, I genuinely want to hear it - drop me a note. Otherwise, see you when the next interesting problem shows up.
