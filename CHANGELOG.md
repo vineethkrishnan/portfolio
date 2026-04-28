@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.29](https://github.com/vineethkrishnan/portfolio/compare/v0.0.28...v0.0.29) (2026-04-28)
+
+
+### Documentation
+
+* **blog:** add post on self-hosted sentry dmarc and signup workaround ([#60](https://github.com/vineethkrishnan/portfolio/issues/60)) ([62bc5ae](https://github.com/vineethkrishnan/portfolio/commit/62bc5ae2e6a1a68254417777f46d07e0b6e000f0))
+
 ## [0.0.28](https://github.com/vineethkrishnan/portfolio/compare/v0.0.27...v0.0.28) (2026-04-27)
 
 
