@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.30](https://github.com/vineethkrishnan/portfolio/compare/v0.0.29...v0.0.30) (2026-04-29)
+
+
+### Documentation
+
+* **blog:** add post on stale node_modules surviving deploys ([#62](https://github.com/vineethkrishnan/portfolio/issues/62)) ([32d4f7d](https://github.com/vineethkrishnan/portfolio/commit/32d4f7db8ff919b14776f208f51561a9f8223c10))
+
 ## [0.0.29](https://github.com/vineethkrishnan/portfolio/compare/v0.0.28...v0.0.29) (2026-04-28)
 
 
