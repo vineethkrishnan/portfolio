@@ -7,9 +7,10 @@ interface Props {
   pubDate: Date;
   updatedDate?: Date;
   tags?: string[];
+  heroImage?: string;
 }
 
-const { title, description, pubDate, updatedDate, tags = [] } = Astro.props;
+const { title, description, pubDate, updatedDate, tags = [], heroImage } = Astro.props;
 
 const formattedPubDate = pubDate.toLocaleDateString("en-US", {
   year: "numeric",
@@ -24,7 +25,7 @@ const formattedUpdateDate = updatedDate?.toLocaleDateString("en-US", {
 });
 ---
 
-<BaseLayout title={`${title} — Vineeth N K`} description={description}>
+<BaseLayout title={`${title} — Vineeth N K`} description={description} image={heroImage}>
   <article class="blog-post section">
     <header class="blog-header fade-in">
       <a href="/blog" class="blog-back">
