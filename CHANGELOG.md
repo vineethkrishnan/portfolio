@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.32](https://github.com/vineethkrishnan/portfolio/compare/v0.0.31...v0.0.32) (2026-04-30)
+
+
+### Features
+
+* **blog:** include hero image in social previews ([#66](https://github.com/vineethkrishnan/portfolio/issues/66)) ([3b14a17](https://github.com/vineethkrishnan/portfolio/commit/3b14a17c12179e84813906ba260ae150a5d4254d))
+
 ## [0.0.31](https://github.com/vineethkrishnan/portfolio/compare/v0.0.30...v0.0.31) (2026-04-30)
 
 
