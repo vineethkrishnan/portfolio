@@ -1,0 +1,4 @@
+Contact: mailto:me@vineethnk.in
+Expires: 2027-04-30T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://vineethnk.in/.well-known/security.txt
