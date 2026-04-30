@@ -1,0 +1,143 @@
+---
+title: "I blocked Tor exit nodes, then I opened Tor Browser"
+description: "I deployed a hardened Tor exit node firewall on a SaaS production box, opened Tor Browser to confirm, and the site loaded. The IPv4 fortress was perfect. The IPv6 side door was wide open. This is the script, the punchline, and the rewrite that became TorShield."
+pubDate: 2026-04-30
+tags: ["tor", "iptables", "ipset", "ipv6", "linux", "security", "ops"]
+draft: false
+---
+
+# I blocked Tor exit nodes, then I opened Tor Browser
+
+![A fortified concrete wall at golden hour, with a locked iron main gate on the left and a small steel side door beside it standing wide open as warm sunlight pours through onto the concrete ground, photorealistic, no people.](/blog/tor-shield-hero.png)
+
+A SaaS I work on has no business serving Tor traffic, and the box had no Tor block of any kind on it. A firewall-level deny felt like the clean, sufficient answer: drop the packets at the kernel, never let them touch the application, never argue with a user agent. So I wrote a small `setup_tor_block.sh`, fewer than 50 lines, that pulled the Tor Project's bulk exit list into an `ipset` and dropped matching packets at `INPUT`. It looked like it worked. I just wanted to harden it before I let it loose under cron.
+
+Several hardening passes later, I deployed the new version on `admin@app-prod-1`. To confirm everything was in place, I opened Tor Browser and pointed it at the application.
+
+The page loaded.
+
+That is where this story actually starts.
+
+## The hardening pass that felt great
+
+The first cut was the kind of thing you write in 20 minutes. No locking, no rollback, no validation, no question of what happens when `curl` returns an HTML error page instead of a list of IPs. Fine for a one-off run on my own laptop, not fine for cron on a production box. So I went back in and made the responsible-adult version.
+
+It got `set -euo pipefail`. It got a root check. It got a `flock` so two cron jobs could not race each other. The list went into a temp `tor_new` ipset first, got validated against a minimum-size threshold, and then atomic-swapped into the live `tor` set. Worst case during a reload was zero dropped legitimate packets, not a half-loaded set.
+
+It got a backup step that wrote `iptables-save` and `ipset save` into `/var/backups/tor-block/` with a timestamped filename and a `latest.env` pointer, plus a `--rollback` flag that restored both. Because firewalls have a way of meeting other firewalls in surprising orders at 11pm.
+
+It got a `--precheck` mode that audited what was already on the box: existing `iptables` rule counts, `ufw` and `firewalld` and `nftables` state, `fail2ban` jails, the `DOCKER-USER` chain, and an optional Cloudflare or WAF probe via a `--domain` flag. If you are about to be the third firewall on a server, you want to know who else is there.
+
+It even got around a small Ubuntu server thing where `iptables-save` lives in `/usr/sbin` and an unprivileged user PATH does not include `/usr/sbin`. The script now resolves binaries explicitly with a `resolve_bin()` helper instead of trusting `$PATH`.
+
+I deployed it. Ran `--precheck`. Clean. Ran the real thing. List downloaded, atomic swap fired, rule installed in `INPUT`, no errors. Counter at zero, which is exactly what you would expect from a fresh deploy.
+
+I opened Tor Browser to confirm.
+
+## The page loaded
+
+Tor Browser routes through a fresh exit node on every connection. The point of opening it was to see the connection get refused at the firewall. Instead, the page rendered. Login form, footer, the works.
+
+I went back to the box.
+
+```bash
+sudo iptables -L INPUT -n -v --line-numbers | head
+```
+
+The rule that was supposed to drop everything matching `match-set tor src` showed `pkts 0 bytes 0`. Not a low number. Zero. Across the entire window since the deploy.
+
+So either my Tor Browser request was not reaching that chain, or the source address was not in the set. I asked the access logs which IP I had come in as.
+
+```
+2a0b:f4c2::27
+```
+
+That is an IPv6 address.
+
+## The IPv6 side door
+
+The IPv4 fortress was perfect. Atomic swap, signed list, rollback, the lot. The `tor` ipset had family `inet`, the rule was `iptables`, the persistence was `iptables-persistent`. All of it was IPv4.
+
+`ip6tables -L INPUT -n -v` was empty. Policy `ACCEPT`. Nothing on the IPv6 side at all. The box was dual-stacked, the application listened on both, and Tor's IPv6 path went straight in past the IPv4 wall like it was not there. Which it was not.
+
+The first instinct was to mirror the v4 work for v6. Pull a list, build a `tor6` ipset with family `inet6`, install an `ip6tables` rule, done. The problem is that the list does not really exist.
+
+`https://check.torproject.org/torbulkexitlist` is IPv4-focused. You will see the occasional IPv6 in there, but mostly not. The cleanest IPv6 source is the Tor Project's own Onionoo:
+
+```
+https://onionoo.torproject.org/details?search=flag:exit&fields=exit_addresses
+```
+
+That returns relays flagged as exits with their exit addresses, IPv4 and IPv6 mixed. On the snapshot I pulled at the time, the IPv6 count was depressingly small. Not because Tor does not have IPv6 exits, but because relay operators do not always advertise an IPv6 in the field this query returns, and `flag:exit` throws away anything not currently flagged at the moment of the call.
+
+So the answer was not "swap one source for another". The answer was to merge several sources and accept that no single feed is complete:
+
+- `torbulkexitlist` for IPv4, the canonical bulk source
+- Onionoo for IPv4 and IPv6 with the `flag:exit` filter
+- `dan.me.uk/torlist/?exit` as an additional feed for broader relay coverage, filtered by the Exit flag
+
+Three sources, deduplicated into two persistent files (`tor_exit_nodes.txt` and `tor_ipv6_exits.txt`), each loaded into its own ipset, each enforced by the matching firewall, each backed up and rolled back together.
+
+I rewrote the script around dual-stack. Two ipsets (`tor` and `tor6`). Two enforcement layers (`iptables` and `ip6tables`). One atomic swap per stack. Backup files for both. The Docker `DOCKER-USER` chain got the same `match-set` drop on both stacks, so containerised services were covered without per-container rules.
+
+Re-deployed. Re-opened Tor Browser. Connection refused at the firewall, finally. The counter started moving on both v4 and v6 rules within minutes.
+
+That was the actual ship.
+
+## The thing I open-sourced as TorShield
+
+Once the dust settled I cleaned the script up, gave it a name, wrote a small BATS suite around the bash, and put it on GitHub as [vineethkrishnan/tor-shield](https://github.com/vineethkrishnan/tor-shield). It is the same idea, packaged so anyone with a Linux production box and no business answering Tor can drop it in without writing the same script for the third time.
+
+The shape of it is small on purpose. One main `setup.sh` does everything. You run it once with `--install-deps` to pull `ipset`, `iptables-persistent`, and `curl`, then again without flags to apply. You can run `--precheck` first to audit the existing firewall stack before changing anything. You can run `--rollback` when, not if, you need to revert.
+
+A typical first install on a fresh box looks like this:
+
+```bash
+git clone https://github.com/vineethkrishnan/tor-shield.git
+cd tor-shield
+
+# Audit the box first, no changes
+sudo ./setup.sh --precheck
+
+# Install dependencies and apply the blocks
+sudo ./setup.sh --install-deps
+```
+
+The first run takes about a minute. It downloads the lists, builds the ipsets, installs the rules, persists everything via `netfilter-persistent`, and writes a backup so the rollback path exists from the moment the rules go live.
+
+Tor exit node lists change constantly, so the value of running this once is approximately zero. The value comes from running it on a schedule. The repo's getting-started has a cron block I use myself:
+
+```cron
+# Twice daily, skip the dan.me.uk source to avoid its rate limit
+0 3,15 * * * /opt/tor-shield/setup.sh --skip-additional < /dev/null >> /var/log/torshield.log 2>&1
+
+# Once a week, full enrichment from all three sources
+0 4 * * 0 /opt/tor-shield/setup.sh < /dev/null >> /var/log/torshield.log 2>&1
+```
+
+The `< /dev/null` is there because the script asks for confirmation when it detects an existing setup and cron has no TTY to type "yes" into. The `--skip-additional` flag exists specifically because dan.me.uk rate-limits and will quietly start serving you HTML errors if you hit it more than once a day. Twice-daily refresh from the canonical sources, weekly enrichment from all three, log to a file, rotate weekly. That is the whole automation.
+
+If you ever need to back out, there are two ways. `sudo ./setup.sh --rollback` restores the most recent backup. Or, the manual nuclear path:
+
+```bash
+sudo iptables  -D INPUT       -m set --match-set tor  src -j DROP
+sudo iptables  -D DOCKER-USER -m set --match-set tor  src -j DROP
+sudo ip6tables -D INPUT       -m set --match-set tor6 src -j DROP
+sudo ipset destroy tor
+sudo ipset destroy tor6
+sudo netfilter-persistent save
+```
+
+That hand-removes the rules and the sets. The backups stay in `/var/backups/tor-block/` either way.
+
+## What I am taking away
+
+Three things, then I am out.
+
+**An IPv4-only Tor block is theatre on a dual-stack box.** I had a perfectly engineered IPv4 firewall: atomic swap, validation, rollback, the lot. The counter sat at zero because the actual traffic walked in over IPv6. If you only block one stack and your origin answers on both, you have not blocked Tor. You have blocked the IPv4 half of Tor and labelled the box "secure". Next time you stand up any list-driven firewall, do v4 and v6 in the same change, or do not bother yet.
+
+**Test by being the threat.** I would have caught this in five minutes if my first action after deploying had been to open Tor Browser and watch the counter, instead of reading my own log lines and feeling good about the deploy. "Did the rule install" is not "is the rule blocking". `pkts 0 bytes 0` on a rule that should be popping is louder than any green log line.
+
+**No single Tor list is complete.** The bulk exit list is IPv4. Onionoo is sparse on v6. dan.me.uk rate-limits. The way to get reasonable coverage is to merge several sources, dedupe, and accept that the union is bigger than any one feed will ever be. That is what TorShield does, and that is what kept it useful past day one.
+
+If you run a SaaS, an internal API, or anything with no legitimate Tor user, [TorShield](https://github.com/vineethkrishnan/tor-shield) is on GitHub. Clone it, run `--precheck`, drop the cron in. If you find a gap, or a better source, pull requests are welcome. Otherwise, see you when the next thing breaks in an interesting way.
