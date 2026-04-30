@@ -6,6 +6,7 @@ import "../styles/global.css";
 interface Props {
   title?: string;
   description?: string;
+  image?: string;
 }
 
 const yearsExp = new Date().getFullYear() - 2012;
@@ -13,7 +14,12 @@ const yearsExp = new Date().getFullYear() - 2012;
 const {
   title = "Vineeth N K — Full Stack Developer",
   description = `Writing code, building tools, and sharing what I learn along the way. Full Stack Developer with ${yearsExp}+ years of experience across TypeScript, Go, Rust, Python, and more.`,
+  image,
 } = Astro.props;
+
+const resolvedImage = image
+  ? new URL(image, Astro.site ?? Astro.url).toString()
+  : undefined;
 ---
 
 <!doctype html>
@@ -29,11 +35,13 @@ const {
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:url" content={Astro.url} />
+    {resolvedImage && <meta property="og:image" content={resolvedImage} />}
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
+    {resolvedImage && <meta name="twitter:image" content={resolvedImage} />}
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
