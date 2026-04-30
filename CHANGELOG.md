@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.34](https://github.com/vineethkrishnan/portfolio/compare/v0.0.33...v0.0.34) (2026-04-30)
+
+
+### Features
+
+* **about:** forest photo, refreshed copy, em-dash sweep across components ([#75](https://github.com/vineethkrishnan/portfolio/issues/75)) ([81783dd](https://github.com/vineethkrishnan/portfolio/commit/81783dd3df64c685446e0e732a53af863d630be9))
+* **blog:** reading time, share buttons, related posts, giscus stub ([#73](https://github.com/vineethkrishnan/portfolio/issues/73)) ([57bd6a0](https://github.com/vineethkrishnan/portfolio/commit/57bd6a0ff36c34267dd4ae3488d38de0e1bf090c))
+* **seo:** replace text-only og card with photo composite ([#74](https://github.com/vineethkrishnan/portfolio/issues/74)) ([42a9369](https://github.com/vineethkrishnan/portfolio/commit/42a9369da286e738b04ca1aea8e78d1d8ec9a613))
+
 ## [0.0.33](https://github.com/vineethkrishnan/portfolio/compare/v0.0.32...v0.0.33) (2026-04-30)
 
 
