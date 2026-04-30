@@ -11,7 +11,7 @@ test.describe("Navigation", () => {
 
     const logo = nav.locator('a[href="/"]');
     await expect(logo).toBeVisible();
-    await expect(logo).toContainText("<VNK />");
+    await expect(logo).toContainText("{VNK}");
   });
 
   test("desktop nav links are present", async ({ page, isMobile }) => {
