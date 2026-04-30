@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.33](https://github.com/vineethkrishnan/portfolio/compare/v0.0.32...v0.0.33) (2026-04-30)
+
+
+### Features
+
+* **brand:** swap navbar and footer mark from &lt;VNK /&gt; to {VNK} with hover animation ([#71](https://github.com/vineethkrishnan/portfolio/issues/71)) ([45dfe08](https://github.com/vineethkrishnan/portfolio/commit/45dfe08465a89f9514343f99f0ee52216301bdca))
+* **seo:** default og card, person and website jsonld, projects itemlist ([#69](https://github.com/vineethkrishnan/portfolio/issues/69)) ([f398c85](https://github.com/vineethkrishnan/portfolio/commit/f398c85d09b19736f809e0e2528d1ea4a74b6796))
+* **seo:** rss feed, json feed, blog jsonld, article meta, canonical urls ([#68](https://github.com/vineethkrishnan/portfolio/issues/68)) ([eef4a37](https://github.com/vineethkrishnan/portfolio/commit/eef4a375afe69e092416f791687a9b53373bf1d3))
+* **site:** robots, humans, security.txt, manifest, icons, llms.txt ([#70](https://github.com/vineethkrishnan/portfolio/issues/70)) ([3760ce6](https://github.com/vineethkrishnan/portfolio/commit/3760ce6c99d495667f9bf1ed3d693bc33f000246))
+
 ## [0.0.32](https://github.com/vineethkrishnan/portfolio/compare/v0.0.31...v0.0.32) (2026-04-30)
 
 
