@@ -8,9 +8,10 @@ interface Props {
   updatedDate?: Date;
   tags?: string[];
   heroImage?: string;
+  readingTime?: { words: number; minutes: number; label: string };
 }
 
-const { title, description, pubDate, updatedDate, tags = [], heroImage } = Astro.props;
+const { title, description, pubDate, updatedDate, tags = [], heroImage, readingTime } = Astro.props;
 
 const formattedPubDate = pubDate.toLocaleDateString("en-US", {
   year: "numeric",
@@ -82,6 +83,12 @@ const blogPostingJsonLd = {
             (Updated: <time datetime={updatedDate.toISOString()}>{formattedUpdateDate}</time>)
           </span>
         )}
+        {readingTime && (
+          <span class="blog-reading-time" title={`${readingTime.words.toLocaleString()} words`}>
+            <span class="blog-meta-sep">·</span>
+            {readingTime.label}
+          </span>
+        )}
       </div>
 
       <h1 class="blog-title">{title}</h1>
@@ -98,6 +105,10 @@ const blogPostingJsonLd = {
 
     <div class="blog-content fade-in">
       <slot />
+    </div>
+
+    <div class="blog-extras">
+      <slot name="after-content" />
     </div>
   </article>
 
@@ -142,6 +153,18 @@ const blogPostingJsonLd = {
   .blog-updated {
     color: var(--color-text-muted);
     font-style: italic;
+  }
+
+  .blog-reading-time {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    cursor: help;
+  }
+
+  .blog-meta-sep {
+    margin-right: 0.5rem;
+    opacity: 0.5;
   }
 
   .blog-title {
@@ -258,5 +281,9 @@ const blogPostingJsonLd = {
     max-width: 100%;
     border-radius: var(--radius-sm);
     margin: 1.5rem 0;
+  }
+
+  .blog-extras {
+    margin-top: 1rem;
   }
 </style>
