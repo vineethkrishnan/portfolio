@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.31](https://github.com/vineethkrishnan/portfolio/compare/v0.0.30...v0.0.31) (2026-04-30)
+
+
+### Documentation
+
+* **blog:** add post on tor exit block that missed ipv6 ([#64](https://github.com/vineethkrishnan/portfolio/issues/64)) ([44ee003](https://github.com/vineethkrishnan/portfolio/commit/44ee003024c76204014600c434bb2f2aeef06076))
+
 ## [0.0.30](https://github.com/vineethkrishnan/portfolio/compare/v0.0.29...v0.0.30) (2026-04-29)
 
 
