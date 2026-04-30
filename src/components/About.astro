@@ -15,57 +15,36 @@ const yearsExp = new Date().getFullYear() - 2012;
   <div class="about-grid">
     <div class="about-content fade-in">
       <p>
-        I'm a Full Stack Developer based in <strong>Cochin, Kerala</strong>, currently working at
-        <strong>BEO Software Pvt. Ltd</strong>. With over {yearsExp} years in the industry, I've had the privilege of
-        working across the entire software stack — from crafting pixel-perfect frontends to designing
-        resilient backend architectures and building developer tooling.
+        I'm a Full Stack Developer with a soft spot for the terminal, well-crafted CLIs, and the
+        kind of debugging that ends in a one-line fix and a long blog post. I've worked across the
+        stack for {yearsExp}+ years: <strong>TypeScript</strong> on the backend, <strong>Rust</strong>
+        and <strong>Go</strong> for tooling, <strong>Python</strong> where the data lives, and
+        whatever else the job needs.
       </p>
       <p>
-        What drives me is the joy of solving real problems with well-crafted code. I don't believe in
-        being locked into one language or framework. Whether it's <strong>TypeScript</strong> for a NestJS
-        backend, <strong>Rust</strong> for a performant CLI, <strong>Go</strong> for container tooling, or
-        <strong>Python</strong> for data processing — I pick the right tool for the job.
+        I write about what breaks and how I fixed it, ship small open-source developer tools, and
+        maintain a personal blog that takes itself just seriously enough. I don't believe in being
+        locked into one language or framework. I pick the right tool for the job and move on.
       </p>
       <p>
-        When I'm not writing production code, I'm building open-source developer tools, experimenting with
-        new technologies, or writing about what I've learned.
+        Outside of code, I'm usually walking somewhere with a camera, looking for trees that look
+        better in <strong>black and white</strong>.
       </p>
+
+      <div class="about-tags">
+        <span class="about-tag">Polyglot</span>
+        <span class="about-tag">CLI craftsman</span>
+        <span class="about-tag">Full stack</span>
+        <span class="about-tag">Open source</span>
+      </div>
     </div>
 
-    <div class="about-highlights fade-in">
-      <div class="highlight-card card">
-        <div class="highlight-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
-          </svg>
-        </div>
-        <div>
-          <h3>Polyglot Developer</h3>
-          <p>Fluent in 8+ languages — choosing the best tool for each problem</p>
-        </div>
-      </div>
-
-      <div class="highlight-card card">
-        <div class="highlight-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-          </svg>
-        </div>
-        <div>
-          <h3>CLI Craftsman</h3>
-          <p>Obsessed with building tools that live in the terminal</p>
-        </div>
-      </div>
-
-      <div class="highlight-card card">
-        <div class="highlight-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-          </svg>
-        </div>
-        <div>
-          <h3>Full Stack Thinker</h3>
-          <p>From databases to dashboards, infrastructure to interfaces</p>
+    <div class="about-photo fade-in">
+      <div class="photo-frame">
+        <img src="/about-photo.jpg" alt="Walking somewhere with a camera, off keyboard" loading="lazy" decoding="async" />
+        <div class="photo-caption">
+          <span class="photo-caption-prompt">&gt;_</span>
+          off keyboard, somewhere green
         </div>
       </div>
     </div>
@@ -83,6 +62,7 @@ const yearsExp = new Date().getFullYear() - 2012;
     .about-grid {
       grid-template-columns: 1.3fr 1fr;
       gap: 3.5rem;
+      align-items: start;
     }
   }
 
@@ -96,6 +76,7 @@ const yearsExp = new Date().getFullYear() - 2012;
     color: var(--color-text);
     line-height: 1.8;
     font-size: 0.95rem;
+    margin: 0;
   }
 
   .about-content strong {
@@ -103,34 +84,64 @@ const yearsExp = new Date().getFullYear() - 2012;
     font-weight: 600;
   }
 
-  .about-highlights {
+  .about-tags {
     display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
   }
 
-  .highlight-card {
-    padding: 1.25rem;
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-  }
-
-  .highlight-icon {
-    color: var(--color-accent);
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-
-  .highlight-card h3 {
-    font-size: 0.9rem;
-    font-weight: 700;
-    margin-bottom: 0.25rem;
-  }
-
-  .highlight-card p {
-    font-size: 0.82rem;
+  .about-tag {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
     color: var(--color-text-muted);
-    line-height: 1.5;
+    letter-spacing: 0.02em;
+  }
+
+  .about-photo {
+    width: 100%;
+  }
+
+  .photo-frame {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    aspect-ratio: 4 / 5;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 1px 3px var(--color-shadow), 0 12px 32px var(--color-shadow);
+  }
+
+  .photo-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    filter: contrast(1.04) brightness(1.02);
+    transition: transform 0.6s ease;
+  }
+
+  .photo-frame:hover img {
+    transform: scale(1.03);
+  }
+
+  .photo-caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 0.85rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--color-text-on-dark, #d4d4d8);
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+    letter-spacing: 0.03em;
+  }
+
+  .photo-caption-prompt {
+    color: var(--color-accent);
+    margin-right: 0.4rem;
   }
 </style>

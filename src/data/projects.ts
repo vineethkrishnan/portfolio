@@ -38,7 +38,7 @@ export const projects: Project[] = [
   {
     name: "agent-sessions",
     description:
-      "Interactive terminal session manager for Claude Code — browse, search, preview, delete, and resume conversations.",
+      "Interactive terminal session manager for Claude Code, browse, search, preview, delete, and resume conversations.",
     language: "TypeScript",
     stars: 1,
     url: "https://github.com/vineethkrishnan/agent-sessions",
@@ -47,7 +47,7 @@ export const projects: Project[] = [
   {
     name: "mcp-pool",
     description:
-      "Curated collection of MCP servers for popular SaaS platforms — Stripe, Sentry, Notion, Linear, Datadog, Vercel, PagerDuty, HubSpot, Intercom, Shopify.",
+      "Curated collection of MCP servers for popular SaaS platforms, Stripe, Sentry, Notion, Linear, Datadog, Vercel, PagerDuty, HubSpot, Intercom, Shopify.",
     language: "TypeScript",
     stars: 1,
     url: "https://github.com/vineethkrishnan/mcp-pool",
@@ -92,7 +92,7 @@ export const projects: Project[] = [
   {
     name: "jquery.verticalScroll.js",
     description:
-      "Lightweight jQuery plugin for smooth full-page vertical scrolling — 13 pagination themes, 16 animations, keyboard/touch/mouse navigation, ARIA accessibility.",
+      "Lightweight jQuery plugin for smooth full-page vertical scrolling, 13 pagination themes, 16 animations, keyboard/touch/mouse navigation, ARIA accessibility.",
     language: "JavaScript",
     stars: 0,
     url: "https://github.com/vineethkrishnan/jquery.verticalScroll.js",
