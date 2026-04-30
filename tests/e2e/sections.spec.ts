@@ -49,12 +49,15 @@ test.describe("Homepage Sections", () => {
     await expect(about).toBeVisible();
 
     await expect(about.locator(".section-title")).toContainText("About Me");
-    await expect(about).toContainText("Cochin, Kerala");
-    await expect(about).toContainText("BEO Software");
+    await expect(about).toContainText("Full Stack Developer");
 
-    // Highlight cards
-    const cards = about.locator(".highlight-card");
-    await expect(cards).toHaveCount(3);
+    // Tag pills (Polyglot, CLI craftsman, Full stack, Open source)
+    const tags = about.locator(".about-tag");
+    await expect(tags).toHaveCount(4);
+
+    // Photo with caption
+    await expect(about.locator(".about-photo img")).toBeVisible();
+    await expect(about.locator(".photo-caption")).toContainText("off keyboard");
   });
 
   test("skills section renders all categories", async ({ page }) => {
