@@ -9,6 +9,86 @@ import Certifications from "../components/Certifications.astro";
 import GitHubStats from "../components/GitHubStats.astro";
 import BlogPreview from "../components/BlogPreview.astro";
 import Contact from "../components/Contact.astro";
+import { projects } from "../data/projects";
+
+const siteUrl = (Astro.site ?? Astro.url).toString();
+const yearsExp = new Date().getFullYear() - 2012;
+
+const personJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Person",
+  name: "Vineeth N K",
+  url: siteUrl,
+  image: new URL("/og-default.png", siteUrl).toString(),
+  jobTitle: "Full Stack Developer",
+  description: `Full Stack Developer with ${yearsExp}+ years of experience across TypeScript, Go, Rust, Python, and more. Writing code, building tools, and sharing what I learn along the way.`,
+  knowsAbout: [
+    "TypeScript",
+    "JavaScript",
+    "Node.js",
+    "NestJS",
+    "React",
+    "Astro",
+    "Go",
+    "Rust",
+    "Python",
+    "PHP",
+    "Linux",
+    "Docker",
+    "DevOps",
+    "PostgreSQL",
+    "MySQL",
+    "MongoDB",
+    "Open Source",
+  ],
+  sameAs: [
+    "https://github.com/vineethkrishnan",
+    "https://www.linkedin.com/in/vineeth-n-k-40891265/",
+    "https://dev.to/vineethnkrishnan",
+    "https://vineethnk.hashnode.dev/",
+  ],
+};
+
+const websiteJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Vineeth N K",
+  alternateName: "vineethnk.in",
+  url: siteUrl,
+  inLanguage: "en",
+  author: {
+    "@type": "Person",
+    name: "Vineeth N K",
+    url: siteUrl,
+  },
+};
+
+const projectsItemList = {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  name: "Open source projects by Vineeth N K",
+  itemListOrder: "https://schema.org/ItemListOrderDescending",
+  numberOfItems: projects.length,
+  itemListElement: projects.map((project, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    item: {
+      "@type": "SoftwareApplication",
+      name: project.name,
+      description: project.description,
+      url: project.url,
+      programmingLanguage: project.language,
+      keywords: project.topics.join(", "),
+      author: {
+        "@type": "Person",
+        name: "Vineeth N K",
+        url: siteUrl,
+      },
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Linux, macOS, Windows",
+    },
+  })),
+};
 ---
 
 <BaseLayout>
@@ -22,4 +102,8 @@ import Contact from "../components/Contact.astro";
   <GitHubStats />
   <BlogPreview />
   <Contact />
+
+  <script type="application/ld+json" set:html={JSON.stringify(personJsonLd)} />
+  <script type="application/ld+json" set:html={JSON.stringify(websiteJsonLd)} />
+  <script type="application/ld+json" set:html={JSON.stringify(projectsItemList)} />
 </BaseLayout>
