@@ -23,9 +23,49 @@ const formattedUpdateDate = updatedDate?.toLocaleDateString("en-US", {
   month: "long",
   day: "numeric",
 });
+
+const siteUrl = Astro.site ?? Astro.url;
+const canonicalUrl = new URL(Astro.url.pathname, siteUrl).toString();
+const absoluteImage = heroImage ? new URL(heroImage, siteUrl).toString() : undefined;
+
+const blogPostingJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  headline: title,
+  description,
+  ...(absoluteImage ? { image: absoluteImage } : {}),
+  datePublished: pubDate.toISOString(),
+  ...(updatedDate ? { dateModified: updatedDate.toISOString() } : { dateModified: pubDate.toISOString() }),
+  author: {
+    "@type": "Person",
+    name: "Vineeth N K",
+    url: siteUrl.toString(),
+  },
+  publisher: {
+    "@type": "Person",
+    name: "Vineeth N K",
+    url: siteUrl.toString(),
+  },
+  mainEntityOfPage: {
+    "@type": "WebPage",
+    "@id": canonicalUrl,
+  },
+  url: canonicalUrl,
+  ...(tags.length ? { keywords: tags.join(", ") } : {}),
+  inLanguage: "en",
+};
 ---
 
-<BaseLayout title={`${title} — Vineeth N K`} description={description} image={heroImage}>
+<BaseLayout
+  title={`${title} — Vineeth N K`}
+  description={description}
+  image={heroImage}
+  imageAlt={title}
+  ogType="article"
+  publishedTime={pubDate}
+  modifiedTime={updatedDate ?? pubDate}
+  tags={tags}
+>
   <article class="blog-post section">
     <header class="blog-header fade-in">
       <a href="/blog" class="blog-back">
@@ -60,6 +100,8 @@ const formattedUpdateDate = updatedDate?.toLocaleDateString("en-US", {
       <slot />
     </div>
   </article>
+
+  <script type="application/ld+json" set:html={JSON.stringify(blogPostingJsonLd)} />
 </BaseLayout>
 
 <style>
