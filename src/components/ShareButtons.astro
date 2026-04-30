@@ -1,0 +1,134 @@
+---
+interface Props {
+  url: string;
+  title: string;
+  description?: string;
+}
+
+const { url, title } = Astro.props;
+
+const tweet = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`;
+const linkedin = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+const hn = `https://news.ycombinator.com/submitlink?u=${encodeURIComponent(url)}&t=${encodeURIComponent(title)}`;
+---
+
+<div class="share-buttons" data-share-url={url}>
+  <span class="share-label">Share</span>
+  <button type="button" class="share-btn share-copy" aria-label="Copy link" title="Copy link">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+    <span class="share-text">Copy</span>
+    <span class="share-toast" aria-live="polite"></span>
+  </button>
+  <a href={tweet} target="_blank" rel="noopener noreferrer" class="share-btn" aria-label="Share on X" title="Share on X">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+    <span class="share-text">X</span>
+  </a>
+  <a href={linkedin} target="_blank" rel="noopener noreferrer" class="share-btn" aria-label="Share on LinkedIn" title="Share on LinkedIn">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.063 2.063 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+    </svg>
+    <span class="share-text">LinkedIn</span>
+  </a>
+  <a href={hn} target="_blank" rel="noopener noreferrer" class="share-btn" aria-label="Submit to Hacker News" title="Submit to Hacker News">
+    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+      <rect width="24" height="24" rx="3" fill="currentColor" opacity="0.15" />
+      <text x="12" y="16.5" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" font-weight="700" fill="currentColor">Y</text>
+    </svg>
+    <span class="share-text">HN</span>
+  </a>
+</div>
+
+<style>
+  .share-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 1.5rem 0 0;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .share-label {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    font-weight: 500;
+    margin-right: 0.25rem;
+  }
+
+  .share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+    text-decoration: none;
+    position: relative;
+    line-height: 1;
+  }
+
+  .share-btn:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+    background-color: var(--color-accent-subtle);
+  }
+
+  .share-toast {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    padding: 0.25rem 0.5rem;
+    background: var(--color-heading);
+    color: var(--color-bg);
+    font-size: 0.7rem;
+    border-radius: var(--radius-xs);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .share-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+
+<script>
+  function initShare() {
+    document.querySelectorAll<HTMLElement>(".share-buttons").forEach((root) => {
+      const url = root.dataset.shareUrl ?? window.location.href;
+      const copyBtn = root.querySelector<HTMLButtonElement>(".share-copy");
+      const toast = copyBtn?.querySelector<HTMLElement>(".share-toast");
+      if (!copyBtn || !toast) return;
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          toast.textContent = "Copied";
+          toast.classList.add("visible");
+          setTimeout(() => toast.classList.remove("visible"), 1500);
+        } catch {
+          toast.textContent = "Press Cmd+C";
+          toast.classList.add("visible");
+          setTimeout(() => toast.classList.remove("visible"), 2000);
+        }
+      });
+    });
+  }
+
+  initShare();
+  document.addEventListener("astro:after-swap", initShare);
+</script>

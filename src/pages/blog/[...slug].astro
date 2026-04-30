@@ -1,6 +1,10 @@
 ---
 import { getCollection, render } from "astro:content";
 import BlogLayout from "../../layouts/BlogLayout.astro";
+import ShareButtons from "../../components/ShareButtons.astro";
+import RelatedPosts from "../../components/RelatedPosts.astro";
+import GiscusComments from "../../components/GiscusComments.astro";
+import { readingTime } from "../../lib/reading-time";
 
 export async function getStaticPaths() {
   const posts = await getCollection("blog");
@@ -12,6 +16,11 @@ export async function getStaticPaths() {
 
 const post = Astro.props;
 const { Content } = await render(post);
+
+const reading = readingTime(post.body ?? "");
+
+const siteUrl = Astro.site ?? Astro.url;
+const canonicalUrl = new URL(`/blog/${post.id}/`, siteUrl).toString();
 ---
 
 <BlogLayout
@@ -21,6 +30,13 @@ const { Content } = await render(post);
   updatedDate={post.data.updatedDate}
   tags={post.data.tags}
   heroImage={post.data.heroImage}
+  readingTime={reading}
 >
   <Content />
+
+  <Fragment slot="after-content">
+    <ShareButtons url={canonicalUrl} title={post.data.title} description={post.data.description} />
+    <RelatedPosts currentSlug={post.id} currentTags={post.data.tags} limit={3} />
+    <GiscusComments />
+  </Fragment>
 </BlogLayout>
