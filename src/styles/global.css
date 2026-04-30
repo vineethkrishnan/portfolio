@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 /* =========================================================================
-   Theme System — 3 visually distinct themes
+   Theme System, 3 visually distinct themes
    ========================================================================= */
 
-/* Minimal Light — warm, editorial, typographic */
+/* Minimal Light, warm, editorial, typographic */
 [data-theme="minimal"] {
   --color-bg: #fafaf9;
   --color-bg-alt: #ffffff;
@@ -40,7 +40,7 @@
   --badge-display: inline-flex;
 }
 
-/* Dark Terminal — hacker aesthetic, CRT feel */
+/* Dark Terminal, hacker aesthetic, CRT feel */
 [data-theme="terminal"] {
   --color-bg: #050505;
   --color-bg-alt: #0c0c0c;
@@ -76,7 +76,7 @@
   --badge-display: none;
 }
 
-/* Modern Elegant — deep, refined, gradient-rich */
+/* Modern Elegant, deep, refined, gradient-rich */
 [data-theme="elegant"] {
   --color-bg: #09071a;
   --color-bg-alt: #0e0c22;

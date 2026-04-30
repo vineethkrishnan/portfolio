@@ -8,7 +8,7 @@ export async function GET(context) {
 
   const feed = {
     version: "https://jsonfeed.org/version/1.1",
-    title: "Vineeth N K — Blog",
+    title: "Vineeth N K, Blog",
     home_page_url: site,
     feed_url: new URL("/feed.json", site).toString(),
     description: "Writing code, building tools, and sharing what I learn along the way.",
