@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.35](https://github.com/vineethkrishnan/portfolio/compare/v0.0.34...v0.0.35) (2026-05-01)
+
+
+### Features
+
+* **blog:** add ClearPR build post ([#77](https://github.com/vineethkrishnan/portfolio/issues/77)) ([50fcec9](https://github.com/vineethkrishnan/portfolio/commit/50fcec993ca55ef25179e3211273c983d8e73980))
+
 ## [0.0.34](https://github.com/vineethkrishnan/portfolio/compare/v0.0.33...v0.0.34) (2026-04-30)
 
 
