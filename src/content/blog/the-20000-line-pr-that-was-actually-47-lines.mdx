@@ -1,0 +1,151 @@
+---
+title: "The 20,000-line PR that was actually 47 lines: building ClearPR"
+description: "How one 20,000-line Prettier PR pushed me to build ClearPR, a self-hosted GitHub App that strips formatting noise, reviews against your own rules, and remembers past feedback."
+pubDate: 2026-05-01
+tags: ["typescript", "nestjs", "github-app", "ai-review", "tree-sitter", "open-source"]
+draft: false
+heroImage: "/blog/clearpr-hero.png"
+---
+
+# The 20,000-line PR that was actually 47 lines: building ClearPR
+
+![A developer at a desk being buried under an enormous unrolling scroll of green and red code diff lines pouring out of his laptop, with one tiny section glowing yellow as the real change.](/blog/clearpr-hero.png)
+
+Some time back, a teammate opened a PR. The diff said **20,847 lines changed**. I clicked, my MacBook fan kicked in, and GitHub started painting the page in those familiar green and red blocks. I scrolled. Scrolled some more. Then a bit more. Eventually I got to the part where I realised what had happened: someone had run Prettier on the whole repo before pushing.
+
+The actual change was 47 lines.
+
+I sat there for a moment thinking about the rest of my afternoon, which was now going to involve scrolling past twenty thousand lines of trailing-comma additions and quote-style flips just to find the part of the code that actually did something different. I tried the GitHub "Hide whitespace" toggle. It did nothing useful, because Prettier does not just touch whitespace. It rewraps lines. It reorders imports. It changes single quotes to double quotes. The toggle was built for a simpler time.
+
+I closed the tab, went and made a coffee, and on the walk back to my desk I started thinking: why am I the one doing this work? Why is my eyeball the noise filter? This is the kind of thing a parser figures out in a few milliseconds.
+
+That is roughly when ClearPR started.
+
+## What ClearPR actually is
+
+ClearPR is a self-hosted GitHub App. You install it on your repos, point it at your own server, and from then on every time someone opens or updates a PR, it does three things:
+
+1. Parses the changed files into an AST and computes a *semantic* diff that ignores formatting noise.
+2. Sends the clean diff to an AI (Claude by default, though you can swap in OpenAI, Mistral, Gemini, or any local LLM that speaks an OpenAI-compatible API: Ollama, LM Studio, LocalAI, llama.cpp, vLLM) along with your project's own guidelines.
+3. Remembers what reviewers caught in past PRs, so the same mistake does not slip through quietly six months later.
+
+It posts inline comments on the lines it has something to say about. It does not approve PRs. It does not block PRs. It does not request changes. It is advisory, deliberately, because nobody on a Friday evening needs an AI bot blocking the merge button.
+
+The whole thing runs in Docker. One `docker compose up -d` and it is alive. You do not send your code anywhere except your own server and the LLM API of your choice.
+
+## Why an AST and not a regex
+
+The first version I prototyped used regexes. Strip trailing whitespace. Collapse blank lines. Normalise quote style. Sort imports alphabetically before diffing. Easy. Worked for the boring cases.
+
+It also broke in beautiful ways. A regex that strips trailing commas does not understand that the comma inside a string literal is not the same as a syntactic trailing comma. A regex that normalises quotes does not know that the apostrophe inside `it's` is not a string delimiter. I got bitten by this almost immediately on real PRs and decided I was building the wrong thing.
+
+The right thing was tree-sitter. Tree-sitter parses your code into an actual abstract syntax tree, the same kind of tree your IDE uses for syntax highlighting and code folding. If two ASTs are structurally identical, the code does the same thing, no matter how it is formatted. That is the whole insight, and it is not even mine. It is just what compilers have known forever.
+
+So ClearPR parses both sides of the diff into ASTs, walks them, and only reports the nodes that actually changed in shape. Whitespace differences? Same tree. Trailing commas? Same tree. Single-to-double quote flip? Same tree. Reordered imports where the set of imports is identical? Same tree. Once you strip all of that, what is left is the part you actually wanted to review.
+
+Has this happened to you also, where you spent ages reviewing a PR only to realise the only thing that mattered was a one-line bug fix hidden inside a Prettier sweep? If yes, you know exactly why I kept building this thing on weekends.
+
+## Then the AI part
+
+Stripping formatting noise was the easy half. The harder half was the review itself, because every "AI code reviewer" I had used until then had the same personality: a slightly anxious junior who flagged everything, suggested "consider adding error handling" on every function, and never seemed to actually know what your project looked like.
+
+I did not want that. I wanted a reviewer that read the project's actual rules and stuck to them.
+
+So ClearPR looks for config in your repo, in this order:
+
+1. `claude.md` at the repo root
+2. `agent.md` at the repo root
+3. `.reviewconfig` at the repo root, which can point at multiple guideline files
+
+If it finds them, it reads the full text and uses it as review context. Your team's naming convention, your error handling rules, your "we never do X here" notes, all of it. The reviews stop saying generic things and start saying specific things like *"this function name does not match the verb-first rule from `naming-conventions.md` line 14"*.
+
+The `.reviewconfig` itself looks like this:
+
+```yaml
+guidelines:
+  - docs/coding-standards.md
+  - docs/naming-conventions.md
+  - docs/api-patterns.md
+severity: medium
+ignore:
+  - '**/*.generated.ts'
+  - 'migrations/**'
+```
+
+Boring on purpose. The whole point is that anyone in the team can edit it without learning a new DSL.
+
+## The part I am most pleased with: PR memory
+
+This is the bit that took the longest and is also the bit I had the most fun building.
+
+Every team I have ever worked with has the same problem. Someone reviews a PR, leaves a thoughtful comment ("hey, you forgot to wrap this in a transaction, that has bitten us before"), the author fixes it, the PR merges, and some months later somebody else writes the same bug and nobody catches it because the original reviewer is busy or on leave or has moved teams.
+
+The institutional memory lives inside one human's head. When the human leaves, the memory leaves.
+
+ClearPR indexes the last 200 merged PRs on install. For each one it pulls the review comments, embeds them with a sentence-transformer model, and stores the vectors in pgvector inside Postgres. From then on, whenever it reviews a new diff, it does a similarity search against past comments and includes the relevant ones in the prompt. So if your team caught "missing transaction wrap" once, ClearPR has it on file, and the next time something looks similar it flags it with context: *"this is similar to the issue found in PR #342 where the booking creation was not wrapped in a transaction."*
+
+It also tracks which feedback was accepted (the code actually changed after the comment) versus dismissed (the author replied "actually that is intentional"). Over time it learns what your team genuinely cares about and stops nagging about the things you have already collectively decided are fine.
+
+Tell me I am not the only one who has watched the same review comment pop up across years on different PRs. The whole point of ClearPR's memory module is to give that knowledge somewhere to live that is not just one senior engineer's brain.
+
+## The cost angle, briefly
+
+A side effect of the AST filtering is that you are sending way fewer tokens to the LLM. On a PR where the raw diff is five thousand lines and the semantic diff is four hundred, you are paying for four hundred lines of input plus the project guidelines, not five thousand. That is not the reason I built it, but for a team of ten doing a couple of hundred PRs a month it adds up to roughly the difference between a thirty-dollar-a-month Claude bill and a two-hundred-dollar one. People notice when their LLM bill is one fifth of what their colleague's is.
+
+## Architecture, very briefly
+
+The stack is what I tend to reach for these days when I want something boring and reliable: NestJS for the API, Postgres with the pgvector extension for the memory store, Redis with BullMQ for the job queue, tree-sitter for the parsing, and the Anthropic SDK (or whichever LLM provider you pick) for the actual review.
+
+The flow is roughly:
+
+```
+GitHub webhook
+       |
+       v
+NestJS receives it, validates the signature, queues a job
+       |
+       v
+BullMQ worker picks it up
+       |
+       +--> tree-sitter computes the semantic diff
+       +--> pgvector pulls similar past comments
+       +--> LLM gets the diff + guidelines + memory hits
+       |
+       v
+Octokit posts inline comments back on the PR
+```
+
+Nothing exotic. The interesting parts are the diff engine and the memory store. Everything else is plumbing.
+
+I went with DDD-flavoured hexagonal architecture inside the NestJS app because I knew there were going to be multiple LLM providers, multiple token-store strategies, multiple language parsers, and I did not want any of those choices baked into the domain layer. So the `review` module talks to a `LlmProvider` interface and does not care whether the implementation is Anthropic or OpenAI or Ollama. Same for the `diff-engine` module, which talks to a `LanguageParser` interface and does not care whether the file is TypeScript or PHP or YAML. This sounded like overengineering on day one. By the time I added the second LLM provider it had already paid for itself.
+
+## What I got wrong the first time
+
+Two things stand out, both about doing too much too early.
+
+First, I tried to support every language tree-sitter supports out of the gate. There are over a hundred parsers. I started wiring them all up. Halfway through I realised I was solving a problem I did not have, because nobody runs Prettier on Haskell. I cut the supported list down to TypeScript, JavaScript, PHP, JSON, and YAML, with a whitespace-only fallback for everything else. Languages can be added when somebody actually asks for them.
+
+Second, the first version of the AI prompt was way too clever. I had it doing a multi-step chain: summarise the diff, extract the intent, compare against guidelines, then write feedback. It was slow, it was expensive, and the reviews were not noticeably better than a single carefully written prompt that did the whole thing in one pass. I deleted the chain. The single-prompt version is faster, cheaper, and the comments are punchier because the model is not trying to fit its reasoning into a structured pipeline.
+
+Both of these are versions of the same lesson: you do not actually know what your tool needs to do until somebody real has tried to use it. Build the smallest thing that could possibly work, ship it, then let the actual usage tell you what to add.
+
+## What is next
+
+The roadmap inside the repo has the public version, but the short version is:
+
+- Auto-fix suggestions through GitHub's suggested-changes UI, so reviewers can click "commit suggestion" instead of copy-pasting from a comment.
+- A small analytics dashboard so a tech lead can see which kinds of issues their team keeps making.
+- Multi-repo support with shared guidelines, for teams that want one source of truth across many services.
+- A pre-push IDE plugin, so you get a ClearPR review locally before you even open the PR.
+
+Some of that is in flight already. Some of it is still a checkbox in a markdown file. Either way, the project is open source and self-hosted by design, so if any of it is interesting to you, the repo is the place to start: [github.com/vineethkrishnan/clearpr](https://github.com/vineethkrishnan/clearpr).
+
+The README has the install steps, the GitHub App setup, and the full list of config options. Full docs are at [clearpr-docs.vineethnk.in](https://clearpr-docs.vineethnk.in/). The Docker image is on Docker Hub at `vineethnkrishnan/clearpr`. License is MIT, so do whatever you want with it.
+
+## Closing
+
+Honestly, the thing I am most happy about with ClearPR is not the AST trick or the memory module or the LLM-provider abstraction. It is that I no longer scroll past twenty thousand lines of Prettier output to find a one-line bug fix. The first time I opened a PR after installing it on my own repos and saw the clean diff comment with the actual change highlighted, I just sat back and laughed. It was such a small thing. It saved me a real chunk of time. And then it did the same thing the next day, and the next.
+
+That is the whole reason any of this exists.
+
+Okay, that is enough from me for today. If any of this saved you some time, that is the whole point of writing it down. Until the next one, take it easy.
