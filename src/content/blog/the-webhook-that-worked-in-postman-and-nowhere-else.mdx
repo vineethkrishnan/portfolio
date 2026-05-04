@@ -1,0 +1,141 @@
+---
+title: "The webhook that worked in Postman and nowhere else"
+description: "Two bootstrap paths in one app drifted apart. The HTTP entrypoint loaded the webhook signing secret, the queue worker did not, and a silent-skip guard hid the cause behind a misleading 401."
+pubDate: 2026-05-04
+tags: ["debugging", "webhooks", "bootstrap", "queue-workers", "fail-fast", "ops"]
+draft: false
+heroImage: "/blog/the-webhook-that-worked-in-postman-and-nowhere-else-hero.png"
+---
+
+# The webhook that worked in Postman and nowhere else
+
+![Two identical office doorways at the end of a corridor, one opens into a brightly lit room, the other into a dim corridor that dead-ends. Flat illustration, soft colors, modern editorial style.](/blog/the-webhook-that-worked-in-postman-and-nowhere-else-hero.png)
+
+> **TL;DR**: an app I work on was firing webhooks at a third-party device API. The receiver kept returning 401. Postman, with the same payload, got 200 every time. The cause was not signing logic, not auth, not network. The app had two completely different bootstrap paths, the secret-loading config was wired into only one of them, and a silent-skip guard quietly hid the real failure under a misleading 401.
+
+So there I was, staring at a wall of 401 responses in the logs. The app was firing webhooks at a third-party device API every time something on our side changed state. Every single one was bouncing back as "unauthorized".
+
+Fine, must be the signature. I copied the raw request body straight out of the logs, dropped it into Postman, signed it the same way the app does, and fired it at the same URL. **200 OK**. First try.
+
+So Postman was happy. The app was not. Same payload, same URL, same headers (so I thought), and yet only one of them was getting through.
+
+If you have ever been in this situation, you know the feeling. There is no Stack Overflow post for "works in Postman, fails from my own app". You have to walk yourself through it.
+
+## First, rule out the obvious stuff
+
+I went through the standard checklist before doing anything clever.
+
+- Same URL? Yes, copy-pasted from the same config.
+- Same body? Yes, byte for byte.
+- Same auth header? Yes, same shared secret loaded from the same env file.
+- Time skew? The timestamp inside the signature was within a few seconds of the receiver's clock.
+- IP whitelist? No, the receiver does not even check the source IP.
+
+So on paper the two requests were the same. The receiver clearly disagreed. Which meant I had to see what the app was actually putting on the wire, not what I thought it was putting on the wire.
+
+## The diff that made the cause obvious
+
+I added a logger that dumped the full outgoing HTTP request right before the dispatch: method, URL, every header, body. Then I triggered an event from the app and let it fire. Side by side with the Postman request:
+
+```
+Postman                              App
+-----------------------------------  -----------------------------------
+POST /webhook                        POST /webhook
+Content-Type: application/json       Content-Type: application/json
+X-Signature: sha256=a3f4...e991      X-Signature:
+User-Agent: Postman                  User-Agent: GuzzleHttp/...
+{"event":"door.unlocked",...}        {"event":"door.unlocked",...}
+```
+
+Look at the second-to-last line on the right. The app *was* sending the `X-Signature` header. The value was just an empty string. Postman had a signature, the app had nothing.
+
+That was a relief in a small, sad way. At least there was something to find.
+
+## Why is the signature empty?
+
+Easy enough to check. The dispatcher looked roughly like this:
+
+```pseudo
+function dispatch(event, payload):
+    secret = config.get("device_api.signing_secret")
+    if secret is empty:
+        // skip signing, send anyway
+        send(payload, headers={})
+        return
+    signature = hmac_sha256(secret, payload)
+    send(payload, headers={"X-Signature": signature})
+```
+
+Two things wrong here, but bear with me.
+
+I dropped a log line on the `secret = ...` line. The value came back `null`. At runtime, in the queue worker's process, the signing secret was just not there.
+
+But the same config file. The same env. The same code reading from the same key. Why was it empty in the worker and full in the HTTP layer?
+
+Has this happened to you also, where two parts of the same app behave like they live in different universes? Welcome to bootstrap drift.
+
+## Two doors that look the same from the outside
+
+The app, like a lot of older codebases, has more than one entrypoint. There is the HTTP entrypoint that serves the website, the API endpoints, anything that comes in over a request. And separately there is a queue worker entrypoint that handles background jobs: sending mails, replicating data, dispatching webhooks (yes, *that* webhook).
+
+Both entrypoints share most of the codebase. They both load the same config files. They both connect to the same database. From the file tree, they look identical.
+
+But they boot through different paths. The HTTP entrypoint has its own bootstrap routine. The queue worker has its own. And somewhere along the way, the config that loaded the third-party device API secret had been added only to the HTTP entrypoint's bootstrap.
+
+When a request came in over HTTP, the bootstrap ran, the secret got loaded, the dispatcher had what it needed. Tested manually with Postman replay against the HTTP entrypoint? Worked, because Postman was hitting the side that had the config.
+
+But the actual production trigger was a queue job. The job ran inside the queue worker process, which booted through the *other* path, which never loaded that config. So `config.get("device_api.signing_secret")` came back null. Every single time.
+
+The two entrypoints had drifted apart. Whoever added the config load had put it where they could see it being needed (the HTTP layer, where the test was easy), and nobody noticed that the queue worker was also calling the same dispatcher.
+
+## The second bug: the silent-skip guard
+
+Look at the dispatcher again:
+
+```pseudo
+if secret is empty:
+    // skip signing, send anyway
+    send(payload, headers={})
+    return
+```
+
+That comment is the second crime scene.
+
+When the secret was missing, instead of throwing an error, the dispatcher quietly stripped the signature header and sent the request anyway. So the receiver, who is doing what every signed-webhook receiver does, saw an unsigned request and answered 401.
+
+From the outside, what we saw was: webhooks fail with 401. The obvious assumption is that the signature is wrong. We spent a good while looking at HMAC code, hashing algorithms, payload encoding, header casing. All of that was fine. The bug was four layers up the stack from where the symptom was showing.
+
+If the dispatcher had just thrown a loud `MissingSecretError: device_api.signing_secret is null`, the cause would have shown up the very first time a webhook tried to fire. Instead it whispered "no signature, oh well", and the receiver did the polite thing and rejected it. Two pieces of code, each individually being defensive, together producing a misleading symptom.
+
+## The fix, and the meta-fix
+
+The local fix was a one-liner. Move the config load into the shared bootstrap that runs for every entrypoint. Now every process that boots, whether HTTP, worker, CLI, or cron, has the secret loaded by the time anything else runs.
+
+The meta-fix was the silent-skip guard. I changed it to throw if the secret is missing in any non-test environment. If somebody, some day, manages to start a worker process without that config loaded, I want it to crash on the first webhook attempt with a useful error, not soldier on producing 401s for hours.
+
+```pseudo
+if secret is empty:
+    if env != "test":
+        throw MissingSigningSecret("device_api.signing_secret")
+    // tests can opt in to unsigned mode
+    send(payload, headers={})
+    return
+```
+
+Took maybe ten minutes to write. The bug had been confusing me for a good chunk of the day.
+
+## Two lessons I am writing on the wall
+
+**Cross-cutting config belongs in the shared bootstrap, not in the entrypoint-specific one.** If a piece of config is needed by code that runs in more than one process type, the only safe place to load it is somewhere all of those processes pass through. Not the HTTP bootstrap. Not the worker bootstrap. The one underneath both. Otherwise you are building two apps that pretend to be the same app, and they will eventually disagree.
+
+**Silent-skip guards turn loud failures into quiet ones.** If a value being missing is going to make the next operation meaningless, do not paper over it. Throw. The sound of a real error in a dev environment is so much cheaper than the silence of a wrong-but-running production. There are exceptions, where degrading gracefully is genuinely the right answer. But the default should be loud, and "quiet on missing config" is almost never the right answer.
+
+If you have hit this kind of bootstrap drift in your own apps, I would love to hear how you spotted it. Mine was pure luck. The request logger I added was actually for an unrelated thing, and I noticed the empty header by accident. Without that I might still be reading HMAC source somewhere.
+
+## Closing
+
+Looking back, this whole thing was less about webhooks and more about how easy it is for two parts of the same app to grow apart without anyone noticing. The codebase looks like one app from the file tree. It runs as two different apps from the operating system's point of view. That gap is where bugs like this live.
+
+If your app has more than one entrypoint, today is a good day to grep for `bootstrap` and check whether all of them are setting up the same world.
+
+That is pretty much it from my side today. Let me know what you think, or if you have been through something similar, those stories are always the best ones. See you soon in the next blog.
