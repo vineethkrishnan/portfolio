@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.36](https://github.com/vineethkrishnan/portfolio/compare/v0.0.35...v0.0.36) (2026-05-05)
+
+
+### Features
+
+* **blog:** post on the webhook that worked in postman and nowhere else ([#79](https://github.com/vineethkrishnan/portfolio/issues/79)) ([128faea](https://github.com/vineethkrishnan/portfolio/commit/128faea68458647a2d92eb44d2a85c751add5cb2))
+
+
+### Bug Fixes
+
+* **test:** align about-section e2e with refreshed copy ([#81](https://github.com/vineethkrishnan/portfolio/issues/81)) ([7a4de15](https://github.com/vineethkrishnan/portfolio/commit/7a4de15da42ae3418ff93757f2d4e8fad4333d85))
+
 ## [0.0.35](https://github.com/vineethkrishnan/portfolio/compare/v0.0.34...v0.0.35) (2026-05-01)
 
 
