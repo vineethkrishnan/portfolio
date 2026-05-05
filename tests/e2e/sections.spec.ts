@@ -49,12 +49,11 @@ test.describe("Homepage Sections", () => {
     await expect(about).toBeVisible();
 
     await expect(about.locator(".section-title")).toContainText("About Me");
-    await expect(about).toContainText("Cochin, Kerala");
-    await expect(about).toContainText("BEO Software");
+    await expect(about).toContainText("Full Stack Developer");
+    await expect(about).toContainText("TypeScript");
 
-    // Highlight cards
-    const cards = about.locator(".highlight-card");
-    await expect(cards).toHaveCount(3);
+    const tags = about.locator(".about-tag");
+    await expect(tags).toHaveCount(4);
   });
 
   test("skills section renders all categories", async ({ page }) => {
