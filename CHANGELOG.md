@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.38](https://github.com/vineethkrishnan/portfolio/compare/v0.0.37...v0.0.38) (2026-05-07)
+
+
+### Features
+
+* **blog:** the disk that filled itself war story ([#84](https://github.com/vineethkrishnan/portfolio/issues/84)) ([971b600](https://github.com/vineethkrishnan/portfolio/commit/971b600caa9e7d35bdda86455a1c4c90fb44c91e))
+
 ## [0.0.37](https://github.com/vineethkrishnan/portfolio/compare/v0.0.36...v0.0.37) (2026-05-07)
 
 
