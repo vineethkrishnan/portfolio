@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.37](https://github.com/vineethkrishnan/portfolio/compare/v0.0.36...v0.0.37) (2026-05-07)
+
+
+### Features
+
+* **blog:** mcp is the usb-c of ai tools post ([#82](https://github.com/vineethkrishnan/portfolio/issues/82)) ([2622152](https://github.com/vineethkrishnan/portfolio/commit/262215255cf696907bdfbf25f13faa3301ec14cf))
+
 ## [0.0.36](https://github.com/vineethkrishnan/portfolio/compare/v0.0.35...v0.0.36) (2026-05-05)
 
 
