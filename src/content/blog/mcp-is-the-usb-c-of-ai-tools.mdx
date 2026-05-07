@@ -1,0 +1,133 @@
+---
+title: "MCP is the USB-C of AI tools, and most devs are still using their AI assistant like it is 2023"
+description: "A quiet protocol shift is happening in AI tooling. Most devs missed it. Why MCP matters, the high-profile breaches that should have your attention, and the rubric I run before installing any new server."
+pubDate: 2026-05-07
+tags: ["mcp", "ai-tooling", "claude", "security", "supply-chain"]
+draft: false
+heroImage: "/blog/mcp-usb-c-hero.png"
+---
+
+# MCP is the USB-C of AI tools, and most devs are still using their AI assistant like it is 2023
+
+![A single USB-C cable in the middle of a desk with thin glowing wires fanning out to small floating app icons - chat, calendar, notes, design canvas, code editor.](/blog/mcp-usb-c-hero.png)
+
+So here is a small thing I noticed the other day. I was watching a friend debug a production issue, and the workflow was painful in a very specific way. Tab to their AI chat of choice, paste an error. Read the answer. Tab to Sentry, copy the stack trace. Tab back to the chat, paste the stack trace. Tab to the codebase, copy the function. Paste it again. Repeat until coffee gets cold. It honestly does not matter which AI they were using. ChatGPT, Claude, Codex, Gemini, take your pick. The flow was the same.
+
+The whole thing felt like watching someone use a phone in 2010. Functional. Slow. And clearly a generation behind something that already exists.
+
+That is the gap I want to talk about today. Because there is a very real protocol shift happening in AI tooling right now, and most developers are completely unaware of it.
+
+## The cable drawer in your house
+
+Open the drawer where you keep your old chargers. Go on, I will wait.
+
+If you are anywhere over thirty, you probably have a small museum in there. Mini USB. Micro USB. The old Apple 30-pin. Lightning. That one weird Samsung cable that nobody can identify. A barrel charger from a router you threw away in 2014. Each one was the only way to talk to a specific device. Each one was useless for anything else.
+
+USB-C did not appear and instantly fix the world. It just slowly became the one cable that worked for everything. Laptop, phone, headphones, monitor, the toothbrush my wife uses, my Kindle. One connector. No drawer.
+
+AI tooling is going through the exact same moment right now. Most people have not noticed.
+
+## The drawer of integrations
+
+For the last couple of years, every AI integration was its own custom cable.
+
+You wanted your AI assistant to read your Notion? Cool, here is a custom plugin that runs on that vendor's plugin system, with its own auth, its own schema, its own quirks. You wanted a different model to query your database? Different system. You wanted to do something with Slack? Build a function-calling wrapper, write the schema by hand, host it somewhere, deal with the auth yourself. You wanted to switch from ChatGPT to Claude, or Claude to Codex, or any of them to a local model? Throw all of it away and start over.
+
+Every "AI integration" was bespoke. Every developer who built one had to figure out the same five problems from scratch. Auth. Schema. Transport. Tool descriptions. Error handling. Five problems times one hundred SaaS tools times five model vendors gives you a number that should have scared us all.
+
+And then a small thing called the **Model Context Protocol** showed up and said: what if this was just one shape?
+
+## What MCP actually is
+
+I will keep this short because the spec is honestly not that interesting and you can read it later if you want.
+
+MCP is a protocol. Your AI client (Claude, ChatGPT, Codex, Gemini, Cursor, whoever) speaks one shape. Any tool, any service, any local script can implement that shape and the client can talk to it. The client does not care if it is reading from Notion, posting to Slack, querying Postgres, or running a Playwright browser. They all expose the same kind of interface. Tools, resources, prompts. That is basically the whole story.
+
+The cleverness is not in the protocol design. The cleverness is in the agreement. Anthropic shipped it. OpenAI adopted it. The big SaaS companies started writing servers for their own products. Atlassian has one. Figma has one. Slack has one. Notion. Vercel. Gmail. Google Calendar. Playwright. The list is now embarrassing in length.
+
+It is the same thing USB-C did. Not a technical breakthrough. A standardisation moment.
+
+## What this looks like in practice
+
+Here is what my actual day looks like now, and I want to be honest, this is the part that took me a while to internalise.
+
+When something breaks in production, I open my editor. I do not open Sentry. I do not open Notion. I do not switch tabs. I just say something like, *"pull the latest unresolved issue in the api project, show me the stack trace, and tell me which file it points to"*. The agent calls the Sentry MCP, gets the issue, reads the file from the codebase, and tells me where the bug is. Sometimes it offers a fix. Sometimes I tell it to write the fix and resolve the issue. The whole loop, including writing the patch and closing the ticket, lives in one window.
+
+And that is for one tool. The same agent, in the same session, can also pull a Linear ticket, check a Figma frame, post an update to Slack, query a Postgres database, and run a quick Playwright test against staging. All without me leaving the editor.
+
+Compare that to the friend I mentioned at the start. Tab to chat, paste, copy, paste, copy. Same problem. Different decade. And again, it is not about which AI tool they picked. ChatGPT, Claude, Codex, Gemini, all of them now speak MCP or are in the process of adding it. The bottleneck is not the model. The bottleneck is whether you have actually plugged anything into it.
+
+Tell me I am not the only one who finds this gap funny.
+
+## I built a thing because I felt the pain
+
+A while back I started building MCP servers for the SaaS tools I actually use at work. It started with one. Then two. Then before I knew it I had eleven of them, plus a shared OAuth library, plus a docs site, plus a Docker setup so they would show up properly in the public registries. The repo is called [mcp-pool](https://github.com/vineethkrishnan/mcp-pool) and I wrote a [whole separate post](/blog/building-mcp-pool) about how it grew, so I will not retell that story here.
+
+The thing I want to point out is that the painful part was never writing the servers. The SDKs are decent. The protocol is small. You can scaffold a basic server in an afternoon if you have done it once before.
+
+The painful part was running them. Six different Node processes on my machine, each one with its own config file, each one needing its own auth token, each one occasionally crashing for no reason and silently disappearing from the agent's tool list. That is the part nobody warns you about. Once you have more than two or three MCP servers, the operations side starts to look a lot like running a small fleet of microservices on your own laptop. Which, when you put it that way, is kind of an absurd thing to be doing.
+
+But that is the price of being early. Same way the first USB-C laptops needed three dongles in your bag. The protocol was right. The ecosystem was still catching up.
+
+## The 2023 dev versus the 2026 dev
+
+So here is the bit I keep coming back to.
+
+The 2023 developer treats the language model as a smarter Stack Overflow. You type a question. You read the answer. You copy something out. You paste it into your code. Your context lives in the chat window. The model has no memory of your repo, your team, your tools, your tickets, your design files, your runbooks, anything.
+
+The 2026 developer treats the language model as the centre of a small workshop. The model has access to the actual systems. It can read the ticket. Open the file. Run the test. Check the design. Post the update. Close the ticket. The dev is no longer copy-pasting context in. The dev is just describing what they want done, and the agent is fetching, reading, deciding, writing.
+
+This is not about AI being smarter. It is about AI being plugged in.
+
+And I would gently suggest that if you are still in the first group, you are leaving an embarrassing amount of productivity on the table. Not because you are bad at your job, but because you are using a 2023 workflow on a 2026 toolchain. Same way someone might still be charging their phone with a cable they keep in a drawer with seven other cables.
+
+## The bit nobody is putting on the marketing slide
+
+So far this post has been mostly cheerful. A new protocol, a nicer way to work, a cable drawer that finally got cleaned up. Honest moment now.
+
+Plugging more tools into your AI assistant is also plugging more attack surface into your daily workflow. The MCP ecosystem has had a genuinely rough run on the security front, and if you are about to install a few servers this weekend, you should know what has actually happened in the last year before you do it.
+
+A short and very much not comprehensive list of real incidents (the [authzed MCP breach timeline](https://authzed.com/blog/timeline-mcp-breaches) has the fuller version, and is what I cross-checked these against):
+
+- **April 2025, [WhatsApp MCP](https://invariantlabs.ai/blog/whatsapp-mcp-exploited)**: a tool-poisoning attack disguised a backdoor as a legitimate server and quietly exfiltrated chat histories.
+- **May 2025, [GitHub MCP](https://invariantlabs.ai/blog/mcp-github-vulnerability)**: a prompt injection in a malicious public issue hijacked the agent into leaking private repository contents, using a token whose scope was way too broad.
+- **September 2025, [Postmark MCP](https://thehackernews.com/2025/09/first-malicious-mcp-server-found.html)**: a trojanized package on a public registry was BCC-ing every email it handled to attacker infrastructure.
+- **October 2025, [Smithery Registry](https://blog.gitguardian.com/breaking-mcp-server-hosting/)**: a path traversal bug exposed builder credentials and compromised thousands of hosted MCP servers in one go.
+- **April 2026, [core MCP STDIO design flaw](https://thehackernews.com/2026/04/anthropic-mcp-design-vulnerability.html)**: an architectural decision in Anthropic's official SDKs that, depending on who you read, exposes upwards of a hundred and fifty million downloads across Cursor, VS Code, Windsurf, Claude Code and others.
+
+And right next to this, a related incident that was not strictly an MCP breach but is exactly the pattern you should be watching for. In April 2026, **Vercel** [disclosed](https://vercel.com/kb/bulletin/vercel-april-2026-security-incident) that an employee was compromised through **Context.ai**, a third-party AI tool that held a Google Workspace OAuth app with broad permissions. Malware on the AI vendor's laptop, then OAuth pivot, then into Vercel customer environment variables ([TechCrunch](https://techcrunch.com/2026/04/20/app-host-vercel-confirms-security-incident-says-customer-data-was-stolen-via-breach-at-context-ai/) and [Trend Micro](https://www.trendmicro.com/en_us/research/26/d/vercel-breach-oauth-supply-chain.html) have the cleanest writeups). Not MCP-specific. But the shape is exactly the shape MCP makes more common.
+
+The pattern across all of these is the same. An AI tool sits in the middle of your stack, holding tokens that reach into your real systems. If that tool is malicious, vulnerable, or just sloppily run, the blast radius is whatever those tokens can reach. And tokens for "read my Notion" or "post to Slack" are not low-privilege things in 2026. They are basically the keys to an entire workspace.
+
+## How to actually check if an MCP server is safe for you
+
+This is not a perfect checklist. It is the rough rubric I run before I install a server. Steal it, sharpen it, throw it away, whatever works.
+
+1. **Who publishes it.** Is the server from the SaaS vendor whose API it wraps, from a known community maintainer, or from a username you have never seen before? Vendor-official is safest. A maintainer with a real track record is fine. A brand new account with one package and no GitHub history is a hard no.
+2. **Read the source.** Most MCP servers are small. Cloning the repo and skimming the tool list takes a few minutes. Look at what tools are exposed, what their descriptions actually say, and whether anything is doing something the README does not mention. Tool poisoning lives in exactly this gap.
+3. **Check the dependency tree.** A small wrapper with two hundred transitive dependencies is a very different risk profile from a small wrapper with five. Shorter is better.
+4. **Token scope, ruthlessly.** When you generate the token the server will use, give it the smallest set of permissions that gets the job done. Read-only beats read-write. Single-project beats organisation-wide. Single-channel beats whole-workspace. Never reuse a token you already use somewhere else.
+5. **Run it locally, not on a hosted gateway.** Hosted MCP gateways are convenient. They are also a single point at which someone else is holding your credentials. If a server can run as a local stdio process on your own machine, prefer that.
+6. **Read-only first, write tools opt-in.** If the server supports read-only mode, start there. Only enable write tools after you have used it long enough to trust both the server and how the agent behaves with it.
+7. **Watch for updates that change tool descriptions.** This is one of the sneakier attack patterns. A server you trusted last month silently expands its tool descriptions in this week's update to include something new and harmful. Pin versions if you can.
+8. **Check the registry verification badges.** Glama and the official MCP registry now flag servers that have been smoke-tested. Not perfect signal, but a server with zero badges, zero stars, and no recent commits is at least worth a second look.
+
+If a server fails most of these, do not install it. If it fails one or two, decide whether the convenience is worth it for your specific situation. None of this is paranoia. It is the same hygiene most of us already apply to npm packages, just adapted to a newer ecosystem that is still figuring out the basics.
+
+## What I would tell a friend
+
+If you read this far and you are wondering whether to bother, here is what I would actually say to a friend over coffee.
+
+Pick one tool you use every day. One. Sentry, Notion, Linear, Slack, your database, whatever. Find an existing MCP server for it on GitHub, or look at the official ones from Anthropic, or check `mcp-pool` if any of those line up with your stack. Run the safety checklist above before you install. Then wire it into Claude Desktop or Claude Code or your client of choice. Spend a single evening doing this and nothing else.
+
+The first time you say *"summarise the last five Sentry issues from this morning"* and an actual answer comes back, with real data, from the real system, you will get it. The shift will feel obvious in hindsight. You will wonder how you spent so long copy-pasting things into a chat box.
+
+That is basically the whole point of this post. Not "MCP is cool". Not "here are the seven best servers to install today". Just: a thing has changed, and most people I know in tech have not yet noticed it has changed. Which is normal. Standardisation moments are always quiet. The drawer of cables does not announce itself. One day you just notice you have not opened the drawer in years.
+
+## Closing
+
+If your AI workflow today involves a lot of tab switching and copy-pasting, that is the cable drawer. It is fine, it works, it is not broken. But there is a different way of doing it now, and the gap between the two is going to keep widening every month as more SaaS companies ship MCP servers for their products.
+
+You do not have to rush. Nobody is keeping score. But it might be worth at least poking at one server this weekend, just to see.
+
+That is all I had on this one. If you made it till here, thank you, genuinely. See you in the next one, where I will probably be complaining about something else that broke.
