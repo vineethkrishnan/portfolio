@@ -1,0 +1,192 @@
+---
+title: "The disk that filled itself"
+description: "Homelab box said 100 percent full, du said half the disk was free. Docker was holding open a log file I had rm'd months ago. lsof +L1 untangles the knot."
+pubDate: 2026-05-07
+tags: ["debugging", "linux", "disk-full", "docker", "self-hosted", "ops"]
+draft: false
+heroImage: "/blog/the-disk-that-filled-itself-hero.png"
+---
+
+# The disk that filled itself
+
+![A hard drive cabinet with its door open showing mostly empty shelves, an external gauge on the outside reading 100 percent full in red, a small ghost icon hovering near one of the shelves to hint at invisible files. Flat illustration, soft muted colors, modern editorial style.](/blog/the-disk-that-filled-itself-hero.png)
+
+> **TL;DR**: my homelab box hit 100 percent disk full out of nowhere. I deleted half the things I could find, `df` still said full, `du` said I had plenty of space. Turned out the disk was holding on to files I had already deleted, because a long-running process still had them open. `lsof +L1` was the magic. A service restart was the fix.
+
+So there I was, on a perfectly normal evening, ssh'd into the homelab box because something had stopped responding. The first thing I check on any "why is this dying" run is `df -h`, almost as a reflex.
+
+```
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  450G  448G   2G  100% /
+```
+
+Cool. So that is why nothing is working.
+
+I have a deal with this box. It runs my self-hosted things, it does not ask for much, and once a quarter or so I prune some old container images and we move on. So I went straight to the usual cleanup playbook, mildly annoyed that I had let it fill up.
+
+```
+docker system prune -a --volumes
+journalctl --vacuum-size=200M
+apt clean
+rm -rf ~/.cache/*
+```
+
+Felt good. Watched the percentages tick down in `du` as I went. Ran `df -h` again, full of optimism.
+
+```
+/dev/nvme0n1p2  450G  448G   2G  100% /
+```
+
+Excuse me?
+
+## When df and du disagree
+
+I went and added it up the long way. `du -sh /` took its time, came back with about 130G used. Big folders identified, nothing weird. Half the disk should have been free.
+
+But `df` sat there, smug, telling me I had two whole gigabytes of breathing room. Same disk. Same minute.
+
+This is the moment in any disk-full story when you realise the problem is not actually the disk. It is who is asking.
+
+If you have hit this exact mismatch before, you already know where this is going. If you have not, here is the thing that took me longer to internalise than I want to admit: `df` and `du` are not measuring the same thing.
+
+`du` walks the directory tree. It adds up files it can see, file by file. If a file is not in some directory, `du` does not know it exists.
+
+`df` asks the filesystem itself how many blocks are in use. The filesystem does not care about directories. It cares about which blocks have been handed out to a file, any file, anywhere.
+
+Most of the time these two views agree. The interesting case is when they do not. And the most common reason they disagree is files that are not in any directory but are still very much being used.
+
+## The deleted file that is not deleted
+
+In Linux, `rm` does not actually delete a file. It just removes the entry from a directory. The file's data only goes away when the last process holding it open lets go.
+
+Which means: if a process has a log file open, and you `rm` that log file, the directory entry is gone, `du` cannot see it, your file browser shows it as deleted, you are happy. But the process is still writing to it. The blocks are still held. `df` is still counting them.
+
+Until that process closes the file or dies, those bytes are real, just invisible.
+
+This is the part of Linux that feels like a magic trick once you see it. `lsof` exposes it directly.
+
+```
+sudo lsof +L1
+```
+
+`+L1` means "show me files with a link count less than 1", which is exactly the deleted-but-still-held case. I ran it expecting maybe a couple of stray MB. The output was a wall of text. The same process kept showing up, holding a frankly embarrassing number of "deleted" files.
+
+The culprit was not exotic. It was the docker daemon, sitting on a container's `json-file` log that had ballooned to hundreds of gigs across the time the box had been running. Some time back, in a cleanup session I do not really remember anymore, I had `rm`'d that log file directly, thinking I was reclaiming space. Docker had no idea I had done that. The file was gone from disk as far as I was concerned. Not gone from docker's open file descriptor.
+
+So every byte that container had been logging since that day, plus every byte before, was still there. Held. Counted by `df`. Invisible to `du`.
+
+Tell me I am not the only one who has done this exact "smart" cleanup move and quietly made it worse.
+
+## The fix, and the not-fix
+
+The actual fix was embarrassing in its simplicity.
+
+```
+sudo systemctl restart docker
+```
+
+That is it. The daemon restarted, every file descriptor it was holding got closed, every "deleted" file finally got a chance to be properly deleted, and `df` was suddenly back to a sensible number.
+
+The not-fix, the thing I should have done in the first place to avoid this whole thing, would have been to never `rm` an active log file. The right move on a docker container log is to truncate it through the existing file descriptor.
+
+```
+truncate -s 0 /var/lib/docker/containers/<id>/<id>-json.log
+```
+
+`truncate` writes through the file descriptor instead of unlinking the directory entry. Docker keeps writing. Disk space comes back. Nobody gets confused.
+
+Or, even better, configure the json-file log driver with `max-size` and `max-file` so it rotates itself and you never have this conversation.
+
+```json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "3"
+  }
+}
+```
+
+That goes in `/etc/docker/daemon.json`, you restart the daemon once, and then this whole class of bug stops being a thing on that box.
+
+## The tools I built so I do not have to do this manually again
+
+After this exact kind of incident, and the embarrassing number of `du -sh /*` sessions that came before it, I went and built a few small things to take the manual labour out of disk-full nights. They are the tools I now reach for before I touch anything by hand.
+
+**`dfree`** is the first one I run. It is a shell script. No arguments, no flags to remember. It scans the disk in a few passes and shows me what is taking space across docker, system caches, dev caches, and logs. Same playbook I tried to do by hand at the start of this story, except it adds the numbers correctly and shows me the docker side first.
+
+```
+$ dfree
+
+=== System Analysis ===
+
+[INFO] Scanning disk usage...
+500G 448G 2G 100%
+
+[INFO] Scanning Docker usage...
+Images: 18.2GB (12.4GB reclaimable)
+Containers: 287GB (281GB reclaimable)
+Build Cache: 4.1GB
+
+[INFO] Scanning Developer Caches...
+  - /home/vineeth/.cache: 480MB
+  - /home/vineeth/.npm/_cacache: 1.1GB
+
+[INFO] Scanning Logs...
+  - /var/log/journal: 320MB
+```
+
+Look at the docker line. `Containers: 287GB (281GB reclaimable)`. On the actual night this happened, I could have read that one line and known exactly where the trouble was, without going on a `find` expedition. After the analysis, dfree asks me one item at a time what I want cleaned, and I say yes or no.
+
+```
+=== Cleanup Process ===
+
+Prune Docker system (images, containers, networks)? [y/N] y
+[INFO] Pruning Docker...
+Total reclaimed space: 12.4GB
+
+Clean system cache at /var/log/journal? [y/N] y
+Clean developer cache at /home/vineeth/.npm/_cacache? [y/N] y
+
+[SUCCESS] Cleanup complete.
+```
+
+For when a flat list is not enough and I want to actually see the shape of the disk, I built **`diskdoc`**, a Rust TUI that walks the filesystem in parallel and lets me browse the result like a tree. Useful when the offender is buried somewhere weird and I want to wander through the directory structure instead of reading a summary. It is not what saves you on the night of. It is what saves you the third time you keep ending up in the same neighbourhood and want to understand why.
+
+But the tool that would have actually short-circuited this whole post is **`dockit`**, a Go CLI that talks to the docker daemon directly. It has a `logs` subcommand built for this exact failure mode.
+
+```
+$ dockit logs
+Finding container log paths on disk...
+
+--- CONTAINER LOG SIZES (Total: 287 GB) ---
+CONTAINER            SIZE            WARNINGS
+notes-app            287 GB          🚨 EXCESSIVE - Consider adding 'log-opt max-size=10m'
+nextcloud            42 MB
+gitea                8.3 MB
+media-server         2.1 MB
+```
+
+That first row is the entire war story compressed into one line. One container, no rotation, hundreds of gigabytes of json sitting on disk, and the tool literally tells me what to do about it. If I had been running `dockit logs` on a cron and getting a ping when any single container crossed a sensible threshold, none of this would have happened. The investigation would have been "fix the log driver config" months ago, not "why is my disk lying to me" at midnight.
+
+If you want the tools, all three are open source:
+
+- **dfree:** [github.com/vineethkrishnan/dfree](https://github.com/vineethkrishnan/dfree)
+- **diskdoc:** [github.com/vineethkrishnan/diskdoc](https://github.com/vineethkrishnan/diskdoc)
+- **dockit:** [github.com/vineethkrishnan/dockit](https://github.com/vineethkrishnan/dockit)
+
+## Two lessons I keep relearning
+
+**`df` and `du` measure two different worlds.** When they agree, life is easy. When they disagree, the answer is almost always "something is being held open". `lsof +L1` is the single command that tells you exactly what. I have probably typed it a hundred times in my career and I still forget it exists for the first stretch of every disk-full incident.
+
+**`rm` on an active log file is a trap.** It looks like cleanup. It is actually just hiding bytes from `du` while the process keeps appending to invisible disk. Use `truncate` if the process supports being truncated under it, signal the process to reopen its log if the app supports that, or rotate properly with logrotate or the platform's native rotation.
+
+Early on in this incident, I was completely sure I had simply not deleted enough stuff yet. I was a few minutes away from ordering another drive. The fix was a service restart, and the cause was a `rm` from months ago that I had thought was helpful at the time.
+
+If you have an old box with self-hosted things on it and you have ever cleaned up a "huge log file" by deleting it directly, today is a good day to run `sudo lsof +L1` and see what your processes are still holding. Worst case you find nothing. Best case you find a sizeable chunk of your disk waiting to be freed.
+
+## Closing
+
+The thing that bothers me about this kind of bug is not the bug itself. It is that I had a wrong mental model of `rm` for years and never really noticed, because most of the time the wrong model and the right model produce the same result. The penalty only shows up at the edges, in long-lived processes with open files, on a box you have neglected for long enough that you forget what you did last summer.
+
+So that is where I will stop. If you have a different way of catching this kind of thing earlier, or a cleaner way of dealing with active logs on a homelab box, I genuinely want to hear it, drop me a note. Otherwise, see you when the next interesting problem shows up.
