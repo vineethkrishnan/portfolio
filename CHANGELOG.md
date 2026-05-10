@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.40](https://github.com/vineethkrishnan/portfolio/compare/v0.0.39...v0.0.40) (2026-05-10)
+
+
+### Features
+
+* **blog:** the shopware plugin that grew into a library ([f170b43](https://github.com/vineethkrishnan/portfolio/commit/f170b43ef3c5ef285d8394710d584646d3c02bfd))
+
 ## [0.0.39](https://github.com/vineethkrishnan/portfolio/compare/v0.0.38...v0.0.39) (2026-05-10)
 
 
