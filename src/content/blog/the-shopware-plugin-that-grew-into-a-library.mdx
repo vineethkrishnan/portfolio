@@ -1,0 +1,84 @@
+---
+title: "The Shopware plugin that grew into a library"
+description: "Started as a small Shopware 6 plugin for Germany's XRechnung 3.0 e-invoice format. Ended as a PHP monorepo with a framework-agnostic core, four adapters, and four CMS plugins. Nobody asked. I built it anyway."
+pubDate: 2026-05-10
+tags: ["php", "xrechnung", "shopware", "open-source", "e-invoicing", "monorepo"]
+draft: false
+heroImage: "/blog/the-shopware-plugin-that-grew-into-a-library-hero.png"
+---
+
+# The Shopware plugin that grew into a library
+
+![A small wooden shipping crate cracked open with green vines and leaves growing outward, flat illustration, soft colors, modern editorial style.](/blog/the-shopware-plugin-that-grew-into-a-library-hero.png)
+
+> **TL;DR**: I am still a Shopware certified developer, just had not built anything in it for a while. Picked up a small plugin idea for Germany's XRechnung 3.0 e-invoice format. By the end of that long weekend, the plugin was the smallest part of what I had. The library underneath, called `xrechnung-kit`, is now a PHP monorepo with a framework-agnostic core, four framework adapters, four CMS plugins, and an optional KoSIT validator bundle. Nobody asked. I built it anyway.
+
+So here is the thing. I am Shopware certified, twice over actually. Standard developer and template developer. I read the release notes when they land in my inbox, I scroll through the changelog when a major version drops, and I have a soft spot for the codebase the way you have a soft spot for an old neighborhood you used to walk through.
+
+But ask me when I last shipped something inside Shopware and the honest answer is, a while.
+
+Not because I had moved on. The certifications are still good, the muscle memory was just rusty. I had been doing other things. NestJS, TypeScript, Vue.js, Docker, the usual modern day full-stack platter. The thing I was missing was a project that needed me to open a Shopware codebase again.
+
+## The thing that pulled me back
+
+Germany has been pushing XRechnung 3.0 hard. EN 16931 compliance is the official standard for B2G e-invoices, and the rules around B2B mandates have been tightening too. So a finance team somewhere will eventually need their tools to spit out KoSIT-strict valid XML. Not "looks like XML to me", but actual valid XML that will pass the German federal validator without complaint.
+
+I started looking at what PHP already had on Packagist for this. Honestly thought I would find a clean library, plug it in, done. What I found was three things, and none of them were quite right.
+
+`horstoeko/zugferd` is excellent at what it does. It does ZUGFeRD and Factur-X, hybrid PDF + embedded XML invoices. Different standard. Not XRechnung 3.0.
+
+`easybill/xrechnung-php` does generate XRechnung XML, but it is one-shot and pretty tightly bound to Easybill's own data shapes. If you do not happen to have Easybill's exact invoice model, you fight the library more than you use it.
+
+The rest of the ecosystem is a small graveyard of either abandoned packages, framework-specific wrappers, or libraries that stop at XSD validation and never get to KoSIT Schematron. XSD will tell you the file looks like an invoice. Schematron will tell you it actually is one, in the way the German tax office wants. There is a real difference.
+
+So the gap was clear. And I had a long weekend.
+
+## How "small plugin" became "monorepo"
+
+The plan was simple. Write a small Shopware 6 plugin that generates XRechnung 3.0 from an existing order. That was it.
+
+What actually happened, in order:
+
+The plugin needed a library underneath. I was not going to embed three thousand lines of XML emitter code inside a Shopware plugin. So that came out into a separate package.
+
+The library should not assume anyone is on Shopware. So I made it framework-agnostic. Just a clean PHP 8.1+ core that takes a typed value object describing an invoice and gives you valid XML.
+
+Then I thought, fine, but Laravel folks will want this. So I wrote a Laravel adapter. Then Symfony. Then CakePHP, because CakePHP is still alive and still has its people. Then Laminas, because if I am writing four adapters I might as well write the four big ones.
+
+Now the core is CMS-friendly. So TYPO3, because German market. WordPress and WooCommerce, of course. And Contenido, because somebody runs Contenido shops in Germany and nobody else is covering them.
+
+And then the KoSIT Schematron validator needs Java 11+ to run, which most projects do not want as a hard PHP dependency. So that became its own optional bundle package, separate from the core.
+
+By the time I looked up, I had a monorepo. Core under `core/`, optional KoSIT bundle under `kosit-bundle/`, framework adapters under `adapters/`, platform plugins under their own subtrees, shared mappers under `mappers/`. Each subtree has its own `composer.json`. The core is auto-mirrored to its own standalone repo via `splitsh-lite` so Packagist can resolve it as a normal single-repo package, even though development happens in the monorepo.
+
+The Shopware plugin was the last thing I wrote.
+
+## The boring decisions I am proudest of
+
+Here is the part nobody talks about when they ship a library. And the part that actually matters when somebody puts your code in a finance pipeline.
+
+If the generator produces invalid output, the library does not silently write it to disk. The XML lands at `*_invalid.xml`, an alert fires once with deduplication, and the original file path stays untouched. If your invoicing job runs at midnight, you wake up to a broken invoice quarantined and a clear log line, not a corrupted file shipped to the customer.
+
+XML output is byte-stable within a patch release. That sounds like a small promise. It is not. It means you can diff outputs in your CI and know that an upgrade did not silently change the bytes you are sending to the tax office.
+
+There is no telemetry, no analytics, and no runtime network calls during XML generation. The KoSIT validator obviously needs the bundled scenarios locally, but those come in via Composer and never call out at runtime.
+
+These are the kinds of things you only notice when somebody breaks them. So I wrote them down as compatibility promises before v1.0.0, which means I have to keep them now. On purpose.
+
+## So why ship this
+
+Here is the honest part. Nobody asked me for a XRechnung 3.0 library with seven sibling packages. There was no client, no contract, no GitHub issue from somebody waiting on this.
+
+But I was Shopware certified, hadn't shipped anything in it in a while, and the gap in the PHP ecosystem was real. And the moment I started writing the plugin, I realised the actual problem was bigger and more fun. It was a library problem with a clean shape. Once you see a clean shape in code, you cannot really un-see it.
+
+A while back I had a session with Claude where I asked it to read the PRD and tell me what was missing for a v1.0.0. Got back a punch list. Spent the next couple of days filling it. The library is now sitting at v1.0.0-rc, going through one last review pass before tagging.
+
+Has this happened to you also? You sit down to write a small plugin and somehow you end up writing the framework underneath it? Tell me I am not the only one.
+
+## What is next
+
+I have to be careful here, because I know how these projects fail. They fail when the maintainer does not respect the boundary they set themselves. If I keep adding adapters, the surface keeps growing and the tests keep slowing down. So the next thing is not more adapters. The next thing is shipping v1.0.0, watching what real users actually need, and only then deciding what to add.
+
+Still a Shopware dev. Just one with a much longer `composer.json` now.
+
+That is all I had on this one. If you made it till here, thank you, genuinely. See you in the next one, where I will probably be complaining about something else that broke.
