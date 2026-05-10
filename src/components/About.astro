@@ -1,5 +1,5 @@
 ---
-import { Image } from "astro:assets";
+import { Picture } from "astro:assets";
 import aboutPhoto from "../assets/about-photo.jpg";
 
 const yearsExp = new Date().getFullYear() - 2012;
@@ -44,7 +44,7 @@ const yearsExp = new Date().getFullYear() - 2012;
 
     <div class="about-photo fade-in">
       <div class="photo-frame">
-        <Image
+        <Picture
           src={aboutPhoto}
           alt="Walking somewhere with a camera, off keyboard"
           widths={[400, 600, 900]}
