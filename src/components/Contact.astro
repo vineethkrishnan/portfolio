@@ -1,10 +1,29 @@
 ---
-const links = [
+const FORM_RECIPIENT = "vineethnkrishnan@gmail.com";
+
+const channels = [
+  {
+    label: "Email",
+    href: "mailto:me@vineethnk.in",
+    username: "me@vineethnk.in",
+    description: "Personal address on this domain",
+    external: false,
+    icon: `<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" />`,
+  },
+  {
+    label: "Email",
+    href: "mailto:vineethnkrishnan@gmail.com",
+    username: "vineethnkrishnan@gmail.com",
+    description: "Personal Gmail, fastest reply",
+    external: false,
+    icon: `<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" />`,
+  },
   {
     label: "GitHub",
     href: "https://github.com/vineethkrishnan",
     username: "@vineethkrishnan",
     description: "Open source projects and contributions",
+    external: true,
     icon: `<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />`,
   },
   {
@@ -12,6 +31,7 @@ const links = [
     href: "https://www.linkedin.com/in/vineeth-n-k-40891265/",
     username: "Vineeth N K",
     description: "Professional profile and network",
+    external: true,
     icon: `<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" /><rect x="2" y="9" width="4" height="12" /><circle cx="4" cy="4" r="2" />`,
   },
 ];
@@ -32,28 +52,83 @@ const links = [
   </div>
 
   <div class="contact-grid">
-    {links.map((link, i) => (
+    {channels.map((channel, i) => (
       <a
-        href={link.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        class={`contact-card card fade-in stagger-${i + 1}`}
+        href={channel.href}
+        {...(channel.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+        class={`contact-card card fade-in stagger-${Math.min(i + 1, 5)}`}
       >
         <div class="contact-top">
           <div class="contact-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={link.icon} />
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={channel.icon} />
           </div>
           <svg class="contact-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
           </svg>
         </div>
-        <h3>{link.label}</h3>
-        <p class="contact-username">{link.username}</p>
-        <p class="contact-desc">{link.description}</p>
+        <h3>{channel.label}</h3>
+        <p class="contact-username">{channel.username}</p>
+        <p class="contact-desc">{channel.description}</p>
       </a>
     ))}
   </div>
+
+  <div class="contact-form-wrap fade-in">
+    <div class="contact-form-header">
+      <h3>Send a quick message</h3>
+      <p>Fill this in, hit send, and your default mail client will open with the message ready to go to <code>{FORM_RECIPIENT}</code>.</p>
+    </div>
+
+    <form id="contact-form" class="contact-form" data-recipient={FORM_RECIPIENT} novalidate>
+      <div class="form-row">
+        <label class="field">
+          <span class="field-label">Your name</span>
+          <input type="text" name="name" autocomplete="name" required />
+        </label>
+        <label class="field">
+          <span class="field-label">Subject</span>
+          <input type="text" name="subject" required />
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">Message</span>
+        <textarea name="message" rows="5" required></textarea>
+      </label>
+      <div class="form-footer">
+        <button type="submit" class="btn btn-primary">
+          Open in mail app
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+        <p class="form-note">No data leaves your device. The form just opens your mail app.</p>
+      </div>
+    </form>
+  </div>
 </section>
+
+<script>
+  const form = document.getElementById("contact-form") as HTMLFormElement | null;
+  if (form) {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const recipient = form.dataset.recipient ?? "";
+      const data = new FormData(form);
+      const name = String(data.get("name") ?? "").trim();
+      const subject = String(data.get("subject") ?? "").trim();
+      const message = String(data.get("message") ?? "").trim();
+
+      if (!name || !subject || !message) {
+        form.reportValidity();
+        return;
+      }
+
+      const body = `${message}\n\n--\n${name}`;
+      const mailto = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.location.href = mailto;
+    });
+  }
+</script>
 
 <style>
   .contact-grid {
@@ -108,11 +183,114 @@ const links = [
     color: var(--color-accent);
     font-family: var(--font-mono);
     font-weight: 500;
+    word-break: break-all;
   }
 
   .contact-desc {
     font-size: 0.82rem;
     color: var(--color-text-muted);
     line-height: 1.5;
+  }
+
+  .contact-form-wrap {
+    margin-top: 2.5rem;
+    padding: 1.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background-color: var(--color-bg-card);
+  }
+
+  .contact-form-header h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+  }
+
+  .contact-form-header p {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    margin-bottom: 1.25rem;
+  }
+
+  .contact-form-header code {
+    font-size: 0.82rem;
+    background-color: var(--color-bg-code);
+    padding: 0.1em 0.4em;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--color-border);
+    color: var(--color-accent);
+  }
+
+  .contact-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+
+  @media (min-width: 640px) {
+    .form-row {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .field-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .field input,
+  .field textarea {
+    width: 100%;
+    padding: 0.7rem 0.85rem;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .field textarea {
+    resize: vertical;
+    min-height: 120px;
+  }
+
+  .field input:focus,
+  .field textarea:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-subtle);
+  }
+
+  .form-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 0.25rem;
+  }
+
+  .form-note {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
   }
 </style>

@@ -1,0 +1,132 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { getCollection } from "astro:content";
+import { tagToSlug } from "../../../lib/tags";
+
+const posts = (await getCollection("blog")).filter((post) => !post.data.draft);
+
+const tagCounts = new Map<string, number>();
+for (const post of posts) {
+  for (const tag of post.data.tags) {
+    tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+  }
+}
+
+const tags = Array.from(tagCounts.entries())
+  .map(([name, count]) => ({ name, count, slug: tagToSlug(name) }))
+  .sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
+
+const maxCount = tags.reduce((max, t) => Math.max(max, t.count), 1);
+const minCount = tags.reduce((min, t) => Math.min(min, t.count), maxCount);
+
+const minSize = 0.85;
+const maxSize = 1.9;
+
+function sizeFor(count: number): number {
+  if (maxCount === minCount) return (minSize + maxSize) / 2;
+  const ratio = (count - minCount) / (maxCount - minCount);
+  return Number((minSize + ratio * (maxSize - minSize)).toFixed(2));
+}
+---
+
+<BaseLayout
+  title="Topics, Vineeth N K"
+  description="Browse blog posts by topic. A tag cloud of every subject covered on this site."
+>
+  <section class="section">
+    <div class="fade-in">
+      <div class="section-label">
+        <span class="section-label-line"></span>
+        <span class="section-label-prefix">~/blog/tags</span>
+      </div>
+      <h1 class="section-title">Topics</h1>
+      <p class="section-subtitle">
+        Every tag across {posts.length} {posts.length === 1 ? "post" : "posts"}. Bigger tag, more posts under it.
+      </p>
+    </div>
+
+    {tags.length === 0 ? (
+      <div class="tags-empty fade-in">
+        <p>No tags yet.</p>
+      </div>
+    ) : (
+      <div class="tag-cloud fade-in">
+        {tags.map((tag) => (
+          <a
+            href={`/blog/tags/${tag.slug}/`}
+            class="tag-cloud-item"
+            style={`font-size: ${sizeFor(tag.count)}rem;`}
+          >
+            <span class="tag-cloud-name">{tag.name}</span>
+            <span class="tag-cloud-count">{tag.count}</span>
+          </a>
+        ))}
+      </div>
+    )}
+
+    <div class="tags-back fade-in">
+      <a href="/blog" class="btn btn-outline">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
+        </svg>
+        Back to blog
+      </a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 0.75rem;
+    align-items: baseline;
+    padding: 1.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background-color: var(--color-bg-card);
+  }
+
+  .tag-cloud-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: var(--radius-xs);
+    color: var(--color-text);
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  }
+
+  .tag-cloud-item:hover {
+    color: var(--color-accent);
+    background-color: var(--color-accent-subtle);
+    transform: translateY(-1px);
+  }
+
+  .tag-cloud-name {
+    font-family: var(--font-mono);
+  }
+
+  .tag-cloud-count {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
+
+  .tag-cloud-item:hover .tag-cloud-count {
+    color: var(--color-accent);
+  }
+
+  .tags-empty {
+    text-align: center;
+    padding: 4rem 0;
+    color: var(--color-text-muted);
+  }
+
+  .tags-back {
+    margin-top: 2rem;
+  }
+</style>

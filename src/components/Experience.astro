@@ -2,30 +2,28 @@
 const experiences = [
   {
     role: "Senior Full-Stack Developer",
-    company: "Ayunis GmbH (Formerly Locaboo GmbH)",
-    period: "Sep 2021 - Present",
-    location: "Munich, Germany",
-    description:
-      "Building and maintaining full-stack applications for the Ayunis platform via BEO Software. Working with Vue.js, PHP, MySQL, and Docker in a hybrid setup across German and Indian teams.",
-    technologies: ["Vue.js", "PHP", "MySQL", "Docker", "TypeScript", "REST APIs"],
-  },
-  {
-    role: "Senior Full-Stack Developer",
     company: "BEO Software Pvt. Ltd",
     period: "Feb 2020 - Present",
     location: "Kochi, Kerala",
     description:
-      "Leading backend architecture decisions and building production-grade applications across the full stack. Working with TypeScript, NestJS, React, and cloud infrastructure. Building internal developer tooling and open-source projects.",
-    technologies: ["TypeScript", "NestJS", "React", "PostgreSQL", "Docker", "AWS"],
-  },
-  {
-    role: "Senior PHP Developer",
-    company: "LOY GmbH",
-    period: "Feb 2020 - Present",
-    location: "Munich, Germany",
-    description:
-      "Developing and maintaining PHP-based applications for LOY's platform via BEO Software.",
-    technologies: ["PHP", "MySQL", "REST APIs"],
+      "Building and maintaining production applications across the full stack for international clients. Lead backend architecture decisions, ship internal developer tooling, and contribute to open-source projects on the side.",
+    technologies: ["TypeScript", "NestJS", "React", "Vue.js", "PHP", "PostgreSQL", "MySQL", "Docker", "AWS"],
+    engagements: [
+      {
+        client: "Ayunis GmbH (formerly Locaboo GmbH)",
+        location: "Munich, Germany",
+        period: "Sep 2021 - Present",
+        summary:
+          "Full-stack work on the Ayunis platform across Vue.js, PHP, MySQL, and Docker, in a hybrid setup spanning German and Indian teams.",
+      },
+      {
+        client: "LOY GmbH",
+        location: "Munich, Germany",
+        period: "Feb 2020 - Present",
+        summary:
+          "Developing and maintaining PHP-based applications for LOY's platform.",
+      },
+    ],
   },
   {
     role: "Senior PHP Developer",
@@ -94,6 +92,29 @@ const experiences = [
           </div>
 
           <p class="timeline-desc">{exp.description}</p>
+
+          {exp.engagements && exp.engagements.length > 0 && (
+            <div class="engagements">
+              <p class="engagements-label">Client engagements</p>
+              <ul class="engagements-list">
+                {exp.engagements.map((eng) => (
+                  <li class="engagement-item">
+                    <div class="engagement-head">
+                      <span class="engagement-client">{eng.client}</span>
+                      <span class="engagement-period">{eng.period}</span>
+                    </div>
+                    <p class="engagement-summary">{eng.summary}</p>
+                    <span class="engagement-location">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                      </svg>
+                      {eng.location}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div class="timeline-tags">
             {exp.technologies.map((tech) => (
@@ -180,6 +201,72 @@ const experiences = [
     color: var(--color-text-muted);
     line-height: 1.7;
     margin-bottom: 1rem;
+  }
+
+  .engagements {
+    margin: 0.5rem 0 1rem;
+    padding: 1rem;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-accent-subtle);
+  }
+
+  .engagements-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--color-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.65rem;
+  }
+
+  .engagements-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .engagement-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .engagement-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .engagement-client {
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: var(--color-text);
+  }
+
+  .engagement-period {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--color-text-muted);
+  }
+
+  .engagement-summary {
+    font-size: 0.84rem;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+
+  .engagement-location {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.74rem;
+    color: var(--color-text-muted);
   }
 
   .timeline-tags {
