@@ -1,0 +1,66 @@
+---
+title: "How I ended up buying vinelabs.de"
+description: "I bought a domain on a Sunday afternoon I had not planned to buy. The trigger was a composer.json author field. The realisation was that shipping eight packages under my personal GitHub username reads like a hobby."
+pubDate: 2026-05-13
+tags: ["personal", "branding", "astro", "cloudflare-pages", "monorepo"]
+draft: true
+heroImage: "/blog/how-i-ended-up-buying-vinelabs-de-hero.png"
+---
+
+# How I ended up buying vinelabs.de
+
+![A hand pinning a small green leaf flag onto a desk globe pointing at Germany, flat illustration, soft colors, modern editorial style.](/blog/how-i-ended-up-buying-vinelabs-de-hero.png)
+
+> **TL;DR**: I bought `vinelabs.de` last weekend. Was not planning to. The trigger was the author field of a manifest file, the same kind you fill into a `composer.json`, a `package.json`, a `Cargo.toml`, or whatever your stack of the day calls it. The realisation was that shipping serious packages under my personal GitHub username reads like a hobby for code that will sit in someone's finance pipeline. Trust problem, not a code problem. So I bought a domain. Set up an org. Built a small landing site. Here is the short version.
+
+So here is what happened. I was in the middle of finishing up `xrechnung-kit`, which started as a small Shopware plugin and grew into a monorepo with eight packages. I have already written about that one separately, so if you want [the long story you can find it here](/blog/the-shopware-plugin-that-grew-into-a-library/).
+
+But the boring scene that mattered was this. I was filling in the manifest files for the Shopware sibling package and the small Astro showcase site that was going to live next to it. So the `composer.json` for the PHP package on one side, the `package.json` for the site on the other. I got to the author block, and I paused. The whole list of packages at that point was going to live under `vineethkrishnan/xrechnung-kit-*` on Packagist, and the showcase site under my personal GitHub username too. All in my personal namespace. For a library that will sit inside finance and accounting pipelines, the vibe of "github.com/vineethkrishnan/anything" reads as hobby. Even if the code is solid. Even if the tests pass. The address itself does the talking before the code gets a chance to.
+
+That was a trust problem, not a code problem. I needed a brand.
+
+If you have ever flinched while writing your own name into a `composer.json`, a `package.json`, or whatever manifest your stack uses, for a package you actually want people to take seriously, you know exactly what I mean.
+
+## The shortlist that did not happen
+
+I sat for a bit with name options. The first instinct was, of course, `.com`. Tried `vinelabs.com`. Already taken. Looked at `vinelabs.io` and `vinelabs.app` next, the standard "labs" fallbacks people reach for.
+
+But `.de` had been in the back of my head the whole time, and I will tell you why.
+
+I have been working in German work culture for a long while now. Handled many `.de` domains across many German shops. Shopware itself is German-scoped. The first XRechnung use case is German. EN 16931 is a EU thing, but XRechnung 3.0 is a federal German standard. If the projects I am putting under this brand are going to focus on the DE and EU region, which they will, then `.de` is not a quirky choice. It is the home address.
+
+So `vinelabs.de`. Bought it.
+
+## What I set up
+
+The bare minimum to make a brand feel real, in order:
+
+The org `github.com/vinelabs-de`. This is where the public-facing repos live.
+
+Two mailboxes, `info@vinelabs.de` and `support@vinelabs.de`. Forwarded to where they need to go. Nothing fancy.
+
+A small landing site, Astro 5 + Tailwind v4, deployed to Cloudflare Pages. The site is driven by a markdown content collection at `src/content/projects/`. Every project I want to showcase is one markdown file with a tagline, a description, a license, and a few highlights. New project equals new file. There is no CMS, no admin panel, no database. I keep saying this about Astro to anyone who will listen, but Astro continues to be unreasonably nice when you do not need a backend.
+
+## Why now, and why DE
+
+The timing is not accidental. Germany is right in the middle of phasing in mandatory B2B e-invoicing. The receive-side mandate is already live, and the send-side mandate is rolling out behind it. EN 16931 / XRechnung 3.0 is what has to come out the other end. A small library that does that correctly, sitting under a brand that is clearly in the DE / EU lane, has a place.
+
+I should also be clear about who I am here. I am an Indian developer, not a German one. I have been working with German teams and German shops for a long time, picked up a fair bit of the working culture, handled enough .de domains and Shopware shops to feel at home in this stack. But I am not pretending to be local. The brand is in the DE / EU lane because that is where the work is, not because I am putting on a costume.
+
+## The mirror trick
+
+Here is the part I am quietly pleased about. I did not want to actually move my repos out of my personal GitHub account. That account has my history, my issues, my CI configurations, my settings. I did not want a hard fork, a rename, or a redirect.
+
+So I wrote a tiny workflow template, `mirror-to-vinelabs.yml`. Lives in a `workflow-templates/` folder. I drop it into any of my personal repos, and on every push to main it syncs that repo into the `vinelabs-de` org.
+
+My personal repo stays the source of truth. The labs org stays the public face. If I ever pull out of the labs branding, it costs me nothing because the canonical code never moved. It is already wired up for `xrechnung-kit`. `vaultctl` is next, then probably a couple of the smaller tools that have outgrown my personal username.
+
+## The honest part
+
+I do not have a roadmap. There is no team. There is no monetisation plan. No funding round, no big launch.
+
+The labs domain exists because I would rather under-promise on a brand than over-promise on my own name. `xrechnung-kit` deserved a home that says "this is built to be used", not "this is what one developer made on a long weekend." It did start on a long weekend. What it is not going to stay is a weekend project. I plan to maintain it like something that has to keep working.
+
+The V is a stem. Everything else is what grew off it.
+
+Alright, that is me done rambling for today. Hope something in here was useful to you. Catch you in the next blog, take care until then.
