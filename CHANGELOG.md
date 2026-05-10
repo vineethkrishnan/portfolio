@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.39](https://github.com/vineethkrishnan/portfolio/compare/v0.0.38...v0.0.39) (2026-05-10)
+
+
+### Features
+
+* **site:** refresh experience, contact, blog discovery and a11y polish ([d662e1a](https://github.com/vineethkrishnan/portfolio/commit/d662e1a16146917246c290af2e119ede1c155d66))
+
+
+### Bug Fixes
+
+* **site:** use Picture for multi-format and bump deps clearing trivy ([b55315f](https://github.com/vineethkrishnan/portfolio/commit/b55315faa3edac7ea437f47b37e36911a3081115))
+
 ## [0.0.38](https://github.com/vineethkrishnan/portfolio/compare/v0.0.37...v0.0.38) (2026-05-07)
 
 
