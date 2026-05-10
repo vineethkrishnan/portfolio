@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.41](https://github.com/vineethkrishnan/portfolio/compare/v0.0.40...v0.0.41) (2026-05-10)
+
+
+### Features
+
+* **blog:** publish how i ended up buying vinelabs.de ([cac83de](https://github.com/vineethkrishnan/portfolio/commit/cac83de1729dcc4363000ad4b42b0e3ad0e7af60))
+
 ## [0.0.40](https://github.com/vineethkrishnan/portfolio/compare/v0.0.39...v0.0.40) (2026-05-10)
 
 
