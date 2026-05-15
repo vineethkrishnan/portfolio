@@ -1,0 +1,233 @@
+---
+title: "Why My One-Line Installer Worked Everywhere Except WSL"
+description: "From three-day onboarding to docker compose to a one-line interactive installer, until one Windows developer hit a CRLF wall in WSL. Here is the full arc and the fix."
+pubDate: 2026-05-15
+tags: ["shell-scripting", "wsl", "windows", "installer", "onboarding", "docker"]
+draft: false
+heroImage: "/blog/why-my-one-line-installer-worked-everywhere-except-wsl-hero.png"
+---
+
+# Why My One-Line Installer Worked Everywhere Except WSL
+
+![A puzzled cartoon developer between two laptops, one showing a green checkmark and one showing a red error, flat illustration, soft colors, modern editorial style.](/blog/why-my-one-line-installer-worked-everywhere-except-wsl-hero.png)
+
+> **TL;DR**: The application I work on used to take a new developer the better part of a week to set up. Some time back I added a Dockerfile and a `docker compose` setup, so the whole onboarding became one command. Then microservices showed up, port conflicts followed, and the README started to grow again. So I built a proper one-line installer. `curl -fsSL https://app.our-product.com/install.sh | bash`. Interactive, asks consent before installing missing deps, walks the user through port customisation, and uninstalls just as cleanly. It worked on every Mac. It worked on Linux. One developer on Windows tried it through WSL and got `./script.sh: 48: Syntax error: end of file unexpected (expecting "then")` on a perfectly normal `if` block. The script was fine. The bytes were not. The trail led to PowerShell's `curl`, which is not curl, and a CRLF that snuck into every shell script in the pipeline. Strip the carriage returns at the top of the pipeline, or call `curl.exe` directly, and the installer behaves itself on every platform.
+
+So here is the longer version, because this is really a story about onboarding, and the installer is just the last chapter of it.
+
+## A short history of setup pain
+
+For a good while, getting a new developer up and running on our application was a small ritual. The system used to be a self-hosted one, with all the joy that brings. Install this version of the language runtime. Install this exact version of the package manager. Install the database, with these flags. Run these migrations. Apt this. Brew that. Then accept all the dependency licence agreements one by one. By the time you reached the login page in your browser, the better part of a workweek was gone.
+
+I used to feel bad every time someone new joined. I mostly work remotely, so on the days I was on-site we would sit together at their desk with their fresh laptop, and on the other days we would slowly chew through the README over a Meet or a Huddle or a Teams call with screen-share, depending on which tool the team was using that quarter. Half the steps had silently rotted. The other half had hidden gotchas that only old hands knew. It was the kind of onboarding that quietly tells a new joiner "we do not really value your first impression". Not great.
+
+So a while back I sat down and wrote a Dockerfile, and a `docker-compose.yml`, and a clear README on top of those. From that day on, new joiners ran one command.
+
+```bash
+docker compose up -d --build
+```
+
+Schema migrations were optional and documented. The application came up. The login page worked. Onboarding compressed from days into one afternoon. For a while that felt like the win.
+
+## And then microservices happened
+
+Some time later, the codebase grew into more than one service. Then more than two. Each new microservice came with its own compose file, its own ports, and its own opinions about what a sensible host port mapping looks like. And when two services both wanted the same host port, the second `docker compose up` died loudly and the dev pinged me on Slack.
+
+I have written about that whole port-conflict mess separately, if you want the longer story of how we ended up settling it. The short version was, we stopped baking host ports into the committed compose files and started using a small override convention. Read [why I stopped arguing about Docker port conventions](/blog/docker-port-convention-suffix-vs-prefix/) for the full take. But even with that fixed, onboarding had quietly slid back into a multi-page README again. New devs had to read a checklist of which services to clone, which ones to bring up, which ones their machine needed dependencies for. The "one command" promise had eroded.
+
+So I sat down again.
+
+## The interactive one-line installer
+
+The plan was simple. Bring the onboarding back down to a single line. But this time, account for the fact that we have multiple services, multiple ecosystems, and machines that are configured slightly differently from each other.
+
+What I wanted was this.
+
+```bash
+curl -fsSL https://app.our-product.com/install.sh | bash
+```
+
+That is the entire user-facing command. Everything else happens inside the installer, interactively. The script does roughly this.
+
+1. **Detect the device.** OS, architecture, available shells, whether Docker is installed, whether the user is already on a working setup.
+2. **Check the requirements.** Walk through the list of things our stack needs. If any are missing, do not silently install them. Show what is missing and ask the user for consent, one by one. "Docker is not installed. Install it now? [y/N]". Same for Compose, same for the language runtime, same for the helper CLIs.
+3. **Walk through port customisation.** Show the default host ports for each service. Detect conflicts on the user's machine. If a port is taken, suggest a replacement and let the user override. Write the chosen ports into the local override file.
+4. **Bring the stack up.** All services, in the right order, with sensible defaults.
+5. **Print the URLs.** "Open this in your browser, log in with these credentials." Done.
+
+There is also a matching uninstaller that walks the reverse path. Stop the services, remove the containers and volumes, optionally remove the dependencies it installed earlier, leave the user's machine clean. The pair lives in the same repo, and the diff is the same shape as any other PR review.
+
+I shipped this. Most of the team is on Mac. The application runs on Ubuntu 24.04 in production. New devs on Mac ran the one-liner, said yes a few times, picked their ports, and were on the login screen in one short coffee. Old devs ran the uninstaller and reinstalled clean. The README shrank to one line of copy-paste.
+
+For a while it really felt like onboarding was solved.
+
+## The one developer on Windows
+
+There was one holdout. One developer on the team is on Windows, and his microservices situation is genuinely different. The microservices stack on his end pulls in dependencies from a slightly different ecosystem, with its own package manager and its own setup steps. The Unix installer cannot do all of that work on a Windows host directly, because some of the tooling assumes a Unix shell underneath.
+
+I did not want to leave him behind. The whole point of the installer was that everyone on the team gets the same easy ride. "Everyone except the Windows developer" is not a one-liner. It is a politely worded form of exclusion.
+
+So I built a Windows wrapper. A small PowerShell script, `install.ps1`, that does the Windows-side preparation. Make sure WSL is enabled. Make sure an Ubuntu distro is installed inside WSL. Pull in the Windows-side toolchain that the microservices need. Then, once WSL is ready, the PS1 wrapper just delegates to the Unix installer inside WSL.
+
+```powershell
+irm https://app.our-product.com/install.ps1 | iex
+```
+
+Run that in PowerShell. `irm` is `Invoke-RestMethod` and `iex` is `Invoke-Expression`. Together they fetch the PS1 from the server and run it in the current PowerShell session. The PS1 then sets the Windows world right. Then it reaches into WSL and runs the same Unix one-liner I shipped for everyone else. In theory, the Windows developer now lives the same life as a Mac developer. In practice...
+
+## The error that did not make sense
+
+He pinged me with a screenshot. The terminal had this.
+
+```
+./cli.sh: 48: Syntax error: end of file unexpected (expecting "then")
+```
+
+Line 48. Line 48 was a plain `if` block. Three lines long. Looked like this.
+
+```sh
+if [ -z "$VERSION" ]; then
+  VERSION="latest"
+fi
+```
+
+Nothing fancy. No bashisms, no double brackets, just clean POSIX. The same lines were happily running on every Mac on the team and on the production Ubuntu fleet that same morning.
+
+I asked him to run it again. Same error. Same line. Plain Ubuntu inside WSL, fresh install, all defaults.
+
+And then he tried the other helper scripts. Same family of errors on every single one. Whichever shell script the PS1 wrapper ended up feeding into WSL, the parser choked on it. The pattern was suspicious. It was not one script. It was every shell script.
+
+## The wrong guesses I went through first
+
+**First guess. Old bash.** Maybe WSL ships an ancient bash and `if-then` is being interpreted strangely. I asked for `bash --version`. Bash 5.1. Same as my Mac. Dead end.
+
+**Second guess. Shell mismatch.** This was my most confident wrong guess. The one-liner pipes to `sh`, and on Ubuntu, `/bin/sh` is `dash`, not bash. Dash is much fussier about bashisms. So if a bashism had quietly slipped into the script, only the dash machines would choke on it. But the same script ran cleanly on the Ubuntu server. And I ran it through dash directly on a Linux box of mine. No problem. So this theory died too.
+
+**Third guess. Weird WSL distro.** Maybe he had picked an Alpine variant or some musl-based thing where the system shell is mildly off. Turned out his default WSL distro was actually `docker-desktop`, which is the stripped-down distro Docker Desktop ships for itself. Not really meant to be a daily-driver shell. So we changed his default WSL distro to plain Ubuntu using `wsl --set-default Ubuntu`, made sure it was the fresh Microsoft Store one, and ran the installer again. Same error. Same line 48. So the distro was not the problem either, but at least now his terminal was a sensible place to live.
+
+I had eliminated all the reasonable explanations. The bug was still right there.
+
+Tell me I am not the only one who has been in this exact spot.
+
+So I gave up on guessing and asked him for a screen-share session. Sometimes the bug is not what you imagine. Sometimes you have to watch it happen on the actual machine where it breaks.
+
+## The moment the truth dropped
+
+Over the call, I asked him to skip the one-liner and instead download the script first, save it locally inside WSL, then run it.
+
+```bash
+curl -fsSL https://app.our-product.com/install.sh -o cli.sh
+./cli.sh
+```
+
+Same error. So the network step was fine. The script content was the actual problem.
+
+Then I asked him to run this.
+
+```bash
+cat -A cli.sh | head -5
+```
+
+`cat -A` shows hidden characters. Where a normal Unix line ends with `$`, a Windows line ends with `^M$`. And the output that came back was full of `^M$`. Every single line.
+
+That is when it clicked. And once I saw it on his machine, I knew it was going to be the same story on every other shell script the PS1 wrapper had touched.
+
+The script on his machine had Windows line endings. CRLF everywhere. `then\r\n` instead of `then\n`. To dash, and frankly to bash too, the word "then" followed by a carriage return is not the keyword `then`. It is a six-character soup that happens to look like the word "then" if you ignore the `\r`. The parser does not ignore the `\r`. It looks for an actual `then`, never finds one, walks off the end of the file, and reports "end of file unexpected (expecting then)" with the line number of the `if` that started the block.
+
+The script was fine. The bytes were not. Something between the file on the server and the bytes that ended up inside WSL had decided to rewrite the line endings.
+
+## The actual culprit: PowerShell's `curl` is not curl
+
+This is the part I want every dev to know, because it bit me cleanly.
+
+In Windows PowerShell, `curl` is not the curl you think it is. It is an alias for `Invoke-WebRequest`. They are fundamentally different things. Real curl streams raw bytes from a URL to stdout. `Invoke-WebRequest` returns a structured PowerShell object with headers, status, body, and the rest. When you pipe that object onward, PowerShell stringifies it. And one of PowerShell's choices when stringifying is "use native Windows line endings, because we are on Windows".
+
+The PS1 wrapper I had written did a lot of small things, but at the heart of it, for every shell script it had to pull from the server and hand over to WSL, it was effectively doing this.
+
+```powershell
+curl -fsSL https://app.our-product.com/install.sh | wsl bash
+```
+
+Innocent looking. Reads exactly like the Unix one-liner. But the `curl` in there was the PowerShell alias, not real curl. The bytes that left it had been quietly converted from LF to CRLF on the way through. By the time `bash` inside WSL saw the script, every line ended in `\r\n`. Every if. Every then. Every case branch. And the helper scripts the installer kicks off internally have `#!/bin/sh` shebangs, which means they get executed by `dash` on Ubuntu. Dash is even less forgiving about `then\r` than bash. That is why the error in the screenshot was the dash-flavoured one.
+
+The kicker is that none of us could have spotted this from reading either the PS1 or the shell script. Both files were fine. The transport was the problem. And the transport was lying about being curl.
+
+## The fix, in three flavours
+
+I ended up shipping all three of these in different layers, because each one defends against a slightly different version of the same trap.
+
+**Flavour one. Tell PowerShell to use real curl.**
+
+Windows 10 and Windows 11 ship a real `curl.exe`. So the fix inside the PS1 wrapper is to bypass the alias and call the executable directly.
+
+```powershell
+curl.exe -fsSL https://app.our-product.com/install.sh | wsl bash
+```
+
+That `.exe` is the whole difference. It tells PowerShell "no, do not give me your fake curl, give me the actual binary that ships with Windows". The bytes pass through unchanged. LF stays LF. The script runs.
+
+This was the first thing I changed inside the wrapper.
+
+**Flavour two. Defend in the pipeline.**
+
+You cannot trust every future maintainer to remember the `.exe`. So I also changed the pipeline to strip carriage returns before handing bytes to the shell.
+
+```powershell
+curl.exe -fsSL https://app.our-product.com/install.sh | wsl bash -c "tr -d '\r' | bash"
+```
+
+`tr -d '\r'` removes every `\r` byte from the stream. If the upstream curl was real curl, this is a no-op. If something later breaks and a CRLF sneaks back in from a different source, this quietly fixes it before the shell ever sees it. Belt and braces.
+
+**Flavour three. Defend inside the script.**
+
+For people who download the script first and then run it locally, which is the careful thing to do, the pipeline fix does not help them. So I added a small self-heal at the top of the installer itself.
+
+```sh
+#!/bin/sh
+set -eu
+
+if grep -q "$(printf '\r')" "$0" 2>/dev/null; then
+  echo "Detected Windows line endings, normalising and re-running..."
+  tmp=$(mktemp)
+  tr -d '\r' < "$0" > "$tmp"
+  chmod +x "$tmp"
+  exec "$tmp" "$@"
+fi
+
+# rest of the installer below this
+```
+
+The first thing the script does is check itself for carriage returns. If it finds any, it writes a CRLF-free copy to a temp file and re-executes that copy with the same arguments. The user sees one extra line of output, and the install continues like nothing happened.
+
+You can argue this is too clever for an installer. I would normally agree. But the whole job of an installer is to absorb platform weirdness so the user does not have to. If the cost of doing that is six lines at the top of the script, I will pay six lines every day of the week.
+
+## And one more, while we are here
+
+I also added a `.gitattributes` rule to the repo, because the same trap has a sibling that bites at checkout time rather than at transport time.
+
+```
+*.sh text eol=lf
+*.bash text eol=lf
+```
+
+This tells git that no matter what platform the repo gets checked out on, shell scripts get LF endings on disk. Windows machines with `core.autocrlf=true`, which is the Windows default, will still hand you LF for these files. It does not solve the PowerShell `curl` problem because that one happens in transport, not at checkout. But it stops a different version of the same trap from biting any future dev who clones the repo on the Windows filesystem and then tries to run scripts from inside WSL.
+
+Same shape of bug. Different point in the pipeline. Better to defend both.
+
+## Where we landed
+
+After the screen-share session ended, the Windows developer ran the PS1 one-liner again. WSL was already set up from the earlier failed attempt. PowerShell now used real curl. The pipeline normalised line endings just in case. The shell scripts self-healed if they ever saw a CR. All of his microservices, including the ones on the other ecosystem, came up. He saw the login page in his browser. The whole thing took a coffee, the same as everyone else.
+
+He pinged me later that day to say it was the smoothest setup he had ever done on a Windows machine for a real engineering project. Coming from someone who has spent years working around the seams between Windows and Linux tooling, that mattered.
+
+## What I would have done differently
+
+With hindsight, the very first thing I should have checked was line endings. Whenever a shell script behaves differently across platforms, and there is no obvious bash-versus-dash issue, the next thing to look at is the bytes. It is almost always line endings. I lost a good chunk of an afternoon to version checks and dash compatibility tests before I got there.
+
+I also should have written the PS1 wrapper with `curl.exe` from day one, instead of using whatever `curl` happened to resolve to in PowerShell. The alias is a footgun and the fix is six characters.
+
+The bigger lesson though is one I knew but had not really internalised. In a "modern one-line installer", the line that does the most work is not the line that runs the install. It is the line that gets your script's bytes from the server to the user's shell without corruption. That step is invisible. That step also has the most ways to silently go wrong, and it does not care that the script is correct. If the bytes are off by one carriage return, all the careful code in the world will not save you.
+
+So now the installer assumes nothing about the transport. It uses real curl. It strips `\r` in the pipeline. It normalises itself if it sees CRLF inside. And the repo carries a `.gitattributes` rule for good measure. The Mac devs are unaffected. The Linux servers are unaffected. The Windows developer has the same one-command onboarding as the rest of the team.
+
+Not going to pretend this was a perfect writeup. But if even one part of it helped some other developer avoid the afternoon I lost, then it was worth putting down. See you in the next one.
