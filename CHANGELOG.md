@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.42](https://github.com/vineethkrishnan/portfolio/compare/v0.0.41...v0.0.42) (2026-05-15)
+
+
+### Features
+
+* **blog:** publish how git worktrees killed my stash-hotfix-rebase dance ([c05b23e](https://github.com/vineethkrishnan/portfolio/commit/c05b23e43e84859936be33855049bf59ddc9feec))
+* **blog:** publish why my one-line installer worked everywhere except wsl ([2c7033a](https://github.com/vineethkrishnan/portfolio/commit/2c7033a388f267f7379e59e9a0d9fa8673f35d6c))
+
 ## [0.0.41](https://github.com/vineethkrishnan/portfolio/compare/v0.0.40...v0.0.41) (2026-05-10)
 
 
