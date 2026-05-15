@@ -46,8 +46,6 @@ jobs:
       - name: Run syndication
         env:
           DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY }}
-          HASHNODE_PAT: ${{ secrets.HASHNODE_PAT }}
-          HASHNODE_PUBLICATION_HOST: ${{ secrets.HASHNODE_PUBLICATION_HOST }}
           SITE_URL: https://vineethnk.in
           DRY_RUN: ${{ inputs.dry_run || false }}
           BACKFILL: ${{ inputs.backfill || false }}

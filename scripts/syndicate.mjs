@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Syndicates blog posts from src/content/blog/*.mdx to dev.to and Hashnode.
+// Syndicates blog posts from src/content/blog/*.mdx to dev.to.
 // Idempotent: tracks state in .syndication.json, skips unchanged posts.
 
 import { readFile, writeFile, readdir } from 'node:fs/promises';
@@ -16,8 +16,6 @@ const BACKFILL = process.env.BACKFILL === 'true';
 const SLUG = process.env.SLUG || '';
 
 const DEVTO_API_KEY = process.env.DEVTO_API_KEY || '';
-const HASHNODE_PAT = process.env.HASHNODE_PAT || '';
-const HASHNODE_PUBLICATION_HOST = process.env.HASHNODE_PUBLICATION_HOST || '';
 
 // ---------------------------------------------------------------------------
 // Frontmatter parser (handles the fixed schema used by src/content.config.ts)
@@ -76,16 +74,6 @@ function devtoTags(tags) {
     .slice(0, 4);
 }
 
-function hashnodeTags(tags) {
-  return tags.slice(0, 5).map((tag) => ({
-    slug: tag.toLowerCase().trim(),
-    name: tag
-      .split('-')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' '),
-  }));
-}
-
 function contentHash(parts) {
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 16);
 }
@@ -142,7 +130,7 @@ async function devtoUpsert({ existingId, title, description, bodyMarkdown, canon
   };
 
   if (DRY_RUN) {
-    console.log(`  [dry-run] dev.to ${existingId ? 'update' : 'create'} — tags=${payload.article.tags.join(',')}`);
+    console.log(`  [dry-run] dev.to ${existingId ? 'update' : 'create'} - tags=${payload.article.tags.join(',')}`);
     return { id: existingId ?? 0, url: 'https://dry-run.example/devto' };
   }
 
@@ -170,7 +158,7 @@ async function devtoUpsert({ existingId, title, description, bodyMarkdown, canon
 
     if (response.status === 429 && attempt < 4) {
       const retryAfter = Number(response.headers.get('retry-after')) || 35;
-      console.log(`    dev.to 429 — waiting ${retryAfter}s (attempt ${attempt}/3)`);
+      console.log(`    dev.to 429 - waiting ${retryAfter}s (attempt ${attempt}/3)`);
       await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
       continue;
     }
@@ -181,36 +169,7 @@ async function devtoUpsert({ existingId, title, description, bodyMarkdown, canon
 }
 
 // ---------------------------------------------------------------------------
-// Hashnode
-// ---------------------------------------------------------------------------
-
-async function hashnodeGraphQL(query, variables) {
-  const response = await fetch('https://gql.hashnode.com/', {
-    method: 'POST',
-    headers: {
-      Authorization: HASHNODE_PAT,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-  const json = await response.json();
-  if (json.errors) {
-    throw new Error(`Hashnode GraphQL error: ${JSON.stringify(json.errors)}`);
-  }
-  return json.data;
-}
-
-async function hashnodeResolvePublicationId() {
-  const query = `query Publication($host: String!) { publication(host: $host) { id } }`;
-  const data = await hashnodeGraphQL(query, { host: HASHNODE_PUBLICATION_HOST });
-  if (!data?.publication?.id) {
-    throw new Error(`Could not resolve Hashnode publication for host ${HASHNODE_PUBLICATION_HOST}`);
-  }
-  return data.publication.id;
-}
-
-// ---------------------------------------------------------------------------
-// Reconciliation — match already-published posts on each platform by canonical URL
+// Reconciliation - match already-published dev.to articles by canonical URL
 // ---------------------------------------------------------------------------
 
 async function fetchDevtoArticles() {
@@ -229,62 +188,9 @@ async function fetchDevtoArticles() {
   return articles;
 }
 
-async function fetchHashnodePosts(publicationId) {
-  const query = `query PublicationPosts($id: ObjectId!) {
-    publication(id: $id) {
-      posts(first: 50) {
-        edges { node { id title url slug } }
-      }
-    }
-  }`;
-  const data = await hashnodeGraphQL(query, { id: publicationId });
-  return (data?.publication?.posts?.edges ?? []).map((edge) => edge.node);
-}
-
 function slugFromCanonical(canonicalUrl) {
   const match = canonicalUrl.match(/\/blog\/([^/]+)\/?$/);
   return match ? match[1] : null;
-}
-
-async function hashnodeUpsert({ existingId, publicationId, title, bodyMarkdown, canonicalUrl, heroImage, tags }) {
-  const tagInputs = hashnodeTags(tags);
-
-  if (DRY_RUN) {
-    console.log(`  [dry-run] hashnode ${existingId ? 'update' : 'publish'} — tags=${tagInputs.map((tag) => tag.slug).join(',')}`);
-    return { id: existingId ?? 'dry-run', url: 'https://dry-run.example/hashnode' };
-  }
-
-  if (existingId) {
-    const mutation = `mutation UpdatePost($input: UpdatePostInput!) {
-      updatePost(input: $input) { post { id slug url } }
-    }`;
-    const input = {
-      id: existingId,
-      title,
-      contentMarkdown: bodyMarkdown,
-      tags: tagInputs,
-      originalArticleURL: canonicalUrl,
-      ...(heroImage ? { coverImageOptions: { coverImageURL: heroImage } } : {}),
-    };
-    const data = await hashnodeGraphQL(mutation, { input });
-    const post = data.updatePost.post;
-    return { id: post.id, url: post.url };
-  }
-
-  const mutation = `mutation PublishPost($input: PublishPostInput!) {
-    publishPost(input: $input) { post { id slug url } }
-  }`;
-  const input = {
-    title,
-    contentMarkdown: bodyMarkdown,
-    publicationId,
-    tags: tagInputs,
-    originalArticleURL: canonicalUrl,
-    ...(heroImage ? { coverImageOptions: { coverImageURL: heroImage } } : {}),
-  };
-  const data = await hashnodeGraphQL(mutation, { input });
-  const post = data.publishPost.post;
-  return { id: post.id, url: post.url };
 }
 
 // ---------------------------------------------------------------------------
@@ -293,8 +199,6 @@ async function hashnodeUpsert({ existingId, publicationId, title, bodyMarkdown, 
 
 async function main() {
   if (!DEVTO_API_KEY) throw new Error('DEVTO_API_KEY missing');
-  if (!HASHNODE_PAT) throw new Error('HASHNODE_PAT missing');
-  if (!HASHNODE_PUBLICATION_HOST) throw new Error('HASHNODE_PUBLICATION_HOST missing');
 
   const state = existsSync(STATE_FILE) ? JSON.parse(await readFile(STATE_FILE, 'utf8')) : { posts: {} };
   if (!state.posts) state.posts = {};
@@ -308,14 +212,11 @@ async function main() {
   console.log(`Mode: ${DRY_RUN ? 'DRY RUN' : 'LIVE'}${BACKFILL ? ' (backfill)' : ''}`);
   console.log(`Posts to evaluate: ${posts.length}`);
 
-  const publicationId = await hashnodeResolvePublicationId();
-
-  // Reconcile state with what's already on each platform, matched by the
-  // portfolio canonical URL. Prevents duplicate creation when a prior run
-  // published posts but crashed before committing state back.
+  // Reconcile state with what's already on dev.to, matched by the portfolio
+  // canonical URL. Prevents duplicate creation when a prior run published
+  // posts but crashed before committing state back.
   if (!DRY_RUN) {
     const devtoExisting = await fetchDevtoArticles();
-    const hashnodeExisting = await fetchHashnodePosts(publicationId);
     let reconciled = 0;
 
     for (const article of devtoExisting) {
@@ -327,17 +228,8 @@ async function main() {
         reconciled += 1;
       }
     }
-    for (const post of hashnodeExisting) {
-      const slug = post.slug;
-      if (!slug || !state.posts[slug]) continue;
-      const entry = state.posts[slug];
-      if (!entry.hashnode) {
-        entry.hashnode = { id: post.id, url: post.url };
-        reconciled += 1;
-      }
-    }
     if (reconciled > 0) {
-      console.log(`Reconciled ${reconciled} existing platform entries into state.`);
+      console.log(`Reconciled ${reconciled} existing dev.to entries into state.`);
     }
   }
 
@@ -385,23 +277,11 @@ async function main() {
     });
     console.log(`    dev.to   -> ${devto.url}`);
 
-    const hashnode = await hashnodeUpsert({
-      existingId: prior.hashnode?.id,
-      publicationId,
-      title: frontmatter.title,
-      bodyMarkdown,
-      canonicalUrl,
-      heroImage,
-      tags,
-    });
-    console.log(`    hashnode -> ${hashnode.url}`);
-
     if (!DRY_RUN) {
       state.posts[slug] = {
         title: frontmatter.title,
         hash,
         devto: { id: devto.id, url: devto.url },
-        hashnode: { id: hashnode.id, url: hashnode.url },
         syndicatedAt: new Date().toISOString(),
       };
       state.updatedAt = new Date().toISOString();
