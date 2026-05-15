@@ -1,0 +1,201 @@
+---
+title: "How Git Worktrees Killed My Stash-Hotfix-Rebase Dance"
+description: "The old stash, checkout, hotfix, rebase, pop routine is a quiet war crime against your evening. One git worktree later, hotfixes stopped scaring me, and AI agents made it the most quietly powerful habit in my workflow."
+pubDate: 2026-05-15
+tags: ["git", "worktrees", "developer-workflow", "ai-agents", "graphite"]
+draft: false
+heroImage: "/blog/how-git-worktrees-killed-my-stash-hotfix-rebase-dance-hero.png"
+---
+
+# How Git Worktrees Killed My Stash-Hotfix-Rebase Dance
+
+![A developer calmly sipping coffee while three parallel laptops at branching desks each run their own task, flat illustration, soft colors, modern editorial style.](/blog/how-git-worktrees-killed-my-stash-hotfix-rebase-dance-hero.png)
+
+> **TL;DR**: For the longest time, every urgent hotfix in the middle of a feature meant the same painful little dance. Stash my work, checkout main, branch off, fix, push, switch back, rebase, pop the stash, then enjoy the surprise conflicts. Git worktrees made all of that nonsense vanish. One feature branch checked out in one folder, one hotfix branch checked out in another folder, both alive at the same time, both pointing at the same repo. Add agentic AI on top and now I am spinning up parallel worktrees, handing each one a task, and reviewing clean PRs in Graphite while my coffee is still warm. This blog is for every developer who has not yet befriended `git worktree`. By the end of it, you will wonder how you survived without it.
+
+So before I tell you why worktrees changed my life, let me tell you why my life needed changing.
+
+## The dance nobody asked for
+
+Picture the scene. I am deep into a feature branch. Files half-edited, mental model loaded, twenty browser tabs open, a debugger paused on a breakpoint I am about to investigate. The good kind of flow. The expensive kind.
+
+Then Slack does its little notification thing.
+
+> "Production is throwing 500s on the payment page. Can you take a quick look?"
+
+Of course I can. I am the on-call. So now begins the ritual. You know the one. Every developer who has ever held a git branch open during an incident knows the one.
+
+```bash
+git stash push -m "wip feature stuff, please remember everything"
+git checkout main
+git pull
+git checkout -b hotfix/payment-timeout
+# ... patch the bug, write a test, push, open PR, ship ...
+git checkout feature/checkout-redesign
+git rebase main
+# CONFLICT. of course.
+git stash pop
+# CONFLICT. again. of course.
+```
+
+![A terminal full of git stash, checkout, rebase, conflict messages, the old hotfix dance.](/blog/how-git-worktrees-killed-my-stash-hotfix-rebase-dance-before.png)
+
+By the time the stash pop ends in a second round of conflicts, the mental model I had carefully loaded into my head before the Slack ping has fully evaporated. The browser tabs are still there, but I have no idea why I had them open anymore. The breakpoint is irrelevant now because the file has been rewritten by the rebase. I have shipped the hotfix, sure. But I have also paid for it with the rest of my afternoon.
+
+You know this evening if you have ever lived it.
+
+## The thing I should have known earlier
+
+Here is the embarrassing part. `git worktree` has been in git since version 2.5. That is from 2015. The feature is older than half the JavaScript frameworks people are arguing about on Twitter. And for a good chunk of my career, I never used it.
+
+The reason is simple. Nobody told me. The git tutorials I grew up on stopped at branch, merge, rebase, stash. Worktrees lived in the "advanced" page that nobody clicked. I want to fix that for you right here, before this blog ends.
+
+A worktree, in one sentence, is **a second working directory for the same repo, with its own checked-out branch**.
+
+That is the whole idea.
+
+You know how a normal git repo has one folder where your files live, and you `git checkout` to switch branches inside that folder? Worktrees say "what if you could have more than one such folder, each on a different branch, all sharing the same underlying repo data?"
+
+That is it. There is no magic. There is no parallel universe. There is no separate clone eating extra disk for a full second copy of history. Just one repo, multiple working directories, each on its own branch.
+
+## The new dance, which is not really a dance
+
+So now the Slack ping comes in. I am still in my feature branch, still in flow. Here is what happens.
+
+```bash
+git worktree add ../app-hotfix -b hotfix/payment-timeout main
+cd ../app-hotfix
+# patch, test, ship
+git push origin hotfix/payment-timeout
+cd ../app
+# back in my feature branch. nothing moved.
+git worktree remove ../app-hotfix
+```
+
+![A clean terminal showing git worktree add, the hotfix workflow, and worktree remove.](/blog/how-git-worktrees-killed-my-stash-hotfix-rebase-dance-after.png)
+
+No stash. No checkout dance. No rebase. No second conflict from popping a stash that no longer matches reality. My feature branch is exactly where I left it. The breakpoint is still paused. The browser tabs still make sense. The model is still loaded.
+
+This is not a productivity trick. This is a sanity trick.
+
+The first time I did this and switched back to my feature branch and saw my unsaved buffers exactly the way I had left them, I sat there and laughed at myself. All those years of stashing. All those evenings lost to conflict resolution. Gone, because of two flags on a command I had not bothered to read.
+
+## The four worktree commands you actually need
+
+Worktrees sound exotic until you see how few commands run the whole show. There are basically four.
+
+```bash
+# 1. add a new worktree on a new branch
+git worktree add ../path-to-new-folder -b new-branch-name base-branch
+
+# 2. add a worktree on an existing branch
+git worktree add ../path-to-new-folder existing-branch-name
+
+# 3. list all your worktrees
+git worktree list
+
+# 4. clean up a worktree when you are done
+git worktree remove ../path-to-old-folder
+```
+
+That is the whole API. You will not need anything else for the first month. Maybe ever.
+
+A few things worth knowing that the man page mumbles instead of shouts.
+
+**Each worktree gets its own checked-out branch, and a branch can only be checked out in one worktree at a time.** If your feature branch is checked out in `../app`, you cannot also check it out in `../app-hotfix`. Git will politely refuse. This is a feature, not a bug. It stops you from corrupting your own history by editing the same branch from two folders.
+
+**Worktrees share the same `.git` data.** They do not duplicate your history. The new folder has a tiny `.git` file that points back to the original repo. So disk usage is basically the size of your source tree, not the size of your history. Even for a monorepo with years of commits, adding a worktree costs you almost nothing.
+
+**Branches you create inside a worktree are real branches in the main repo.** Push them, merge them, delete them. There is no "worktree branch" species. It is just a branch.
+
+If you have never tried this before and you are reading this on a workday, open your repo right now and run `git worktree add ../scratch -b throwaway main`. Look at the new folder. Be impressed. Run `git worktree remove ../scratch` when you are done. The whole experiment costs you nothing and teaches you everything.
+
+## Where this gets quietly powerful: agentic AI
+
+Now we get to the part that turned this from a nice habit into a discipline I will not work without.
+
+I have been heavy into AI-assisted development lately. Claude Code, Codex, whatever the agent of the month is. The pattern that finally clicked for me is this. Instead of pair-programming with the agent on one branch, I treat each agent like a junior colleague who needs their own desk.
+
+The desk is a worktree.
+
+```bash
+git worktree add ../app-task-42 -b ai/refactor-auth main
+git worktree add ../app-task-43 -b ai/upgrade-orval main
+git worktree add ../app-task-44 -b ai/add-tracing  main
+```
+
+Then I open each worktree in its own terminal, kick off an agent in each one with a clear task, and walk away. Sometimes literally. Coffee, lunch, the school run.
+
+![Three worktrees, three agents, three branches, all running in parallel.](/blog/how-git-worktrees-killed-my-stash-hotfix-rebase-dance-ai.png)
+
+When I come back, there are three branches. Sometimes three open PRs. Sometimes three half-done attempts where the agent got stuck on a question and is patiently waiting for me to unblock it. Either way, the worktrees never stepped on each other. Branch A did not corrupt branch B. The feature branch I was working on before I started this experiment is still there, untouched, sitting in its own folder, ready for me to pick up exactly where I left it.
+
+I review the PRs in Graphite. Stack them if they belong together. Merge them in the right order. The agent does the typing. I do the deciding. The worktrees are what make it parallel instead of a queue.
+
+Anyone else here doing this already and quietly grinning?
+
+The other thing worktrees give you in the AI workflow is something I did not expect. **Review without context switching.** When one of the agents finishes a task, I do not need to abandon my own feature branch to review its PR. I just `cd` into that worktree, read the diff, run the tests, decide. A short detour. Then `cd` back to my own work and the model in my head is undisturbed.
+
+Compare that to the old way. Stash. Checkout to the PR branch. Run tests. Comment. Switch back. Pop. Pray. The cognitive cost of the old way was so high that I avoided reviewing PRs mid-feature. So either the reviews stacked up at the end of the day, or my own feature suffered. With worktrees, neither happens.
+
+## The rules I follow, which you can steal
+
+A few self-imposed rules that turned this from a sometimes-thing into a default.
+
+**One worktree per intent.** Feature, hotfix, review, AI task. Each gets its own folder. If two efforts conceptually belong together, they share. If they do not, they do not.
+
+**Name the folder after the task, not the branch.** `../app-hotfix` is a folder. Inside it lives whichever hotfix branch I happen to be on at the moment. When the hotfix is shipped and the branch is dead, I can reuse the folder for the next hotfix. The folder is the desk. The branch is the paperwork on the desk.
+
+**Keep them as siblings of the main repo, not inside it.** Putting a worktree inside the same folder as the main checkout confuses your editor, your file watchers, and your future self. A flat layout like `code/app`, `code/app-hotfix`, `code/app-task-42` keeps everything sane.
+
+**Delete worktrees the moment they are done.** They are cheap to create. They should be cheap to destroy. A dead worktree lying around is exactly the kind of thing that quietly accumulates until someone, probably future you, has six folders and no memory of what is in any of them.
+
+**Per-worktree shell setup if your stack needs it.** If your project has a `.env`, a `.tool-versions`, or any per-folder setup, each worktree needs its own. This is usually a one-time copy and forget. Some teams put a tiny `bin/new-worktree` script in the repo that does the setup automatically. Worth it if you do this often.
+
+## Three gotchas worth knowing upfront
+
+This is not all sunshine. Three things to watch out for.
+
+**Your editor does not always know what to do.** If you have a workspace open in your main folder and you also open the hotfix worktree in the same editor instance, some IDEs get confused about which `.git` is which. I solved this by opening worktrees in fresh editor windows. Not a real problem, but worth knowing.
+
+**Submodules can be funny.** If your repo uses submodules, each worktree needs to initialise its own submodule pointers. Read the man page section on this before assuming it will just work.
+
+**Tooling that hardcodes paths.** Some build tools, some Docker setups, some test runners have absolute-path assumptions baked in. The first time you run them in a worktree at a different absolute path, things may behave oddly. Usually a small fix in the config. Just be ready for it.
+
+None of these are dealbreakers. None of them have made me regret switching. But better you hear them from me than discover them at 2 in the morning during an incident.
+
+## A note on Graphite, because it deserves one
+
+I mentioned Graphite earlier without explaining it. If you do not use it, the short version is that it is a tool for managing stacks of pull requests. When you have multiple small PRs that depend on each other, Graphite makes them feel like one coherent change instead of a logistics nightmare.
+
+The combination of worktrees and Graphite is honestly the closest I have felt to having an actual second pair of hands. Worktrees give me parallel branches I can edit at the same time. Graphite gives me a way to review and ship those branches as a clean dependency chain. Together, they make the "many small focused PRs" school of working actually feasible, instead of the death-by-rebase it used to be.
+
+I am not affiliated. I just like things that work.
+
+## Where to learn more
+
+If this blog made you want to actually understand worktrees properly, here is the small reading list I would have wanted when I started.
+
+- **The official man page**. Honestly, just `man git-worktree` in your terminal, or read it [online here](https://git-scm.com/docs/git-worktree). It is shorter than you expect.
+- **The original announcement on the GitHub blog**. Worktrees landed in git 2.5 way back in 2015, and the [release post](https://github.blog/open-source/git/git-2-5-including-multiple-worktrees-and-triangular-workflows/) is still one of the clearest explanations of why this feature exists and what problem it solves.
+- **Per-Erik Bergman's guide on Medium**. If the AI angle in this blog is what hooked you, [his guide](https://medium.com/@pererikbergman/the-ultimate-guide-to-git-worktrees-from-daily-dev-to-ai-agents-2b39e63a359d) walks the same arc from daily dev use to coordinating parallel agents, in more depth than I have given it here. One thing I will flag: he recommends nesting worktrees inside a gitignored `.worktrees/` folder at the repo root, which I disagree with for the file-watcher and `rm -rf` reasons covered in the rules section above. Take the AI workflow ideas, skip the layout advice.
+- **GitKraken's command walkthrough**. The [GitKraken page on worktrees](https://www.gitkraken.com/learn/git/git-worktree) is the cleanest "show me add, list, remove" reference I have come across. Skip the GUI parts if you live in the terminal, the command examples stand on their own.
+- **Your own shell history**. I am only half joking. After you have used `git worktree add` a few times, the muscle memory is the best teacher. Add a worktree to a throwaway repo today. Make a branch. Edit a file in it. Look at `git worktree list`. A few minutes of hands-on beats any blog post, including this one.
+
+If you read just one of these, read the man page. It is genuinely the fastest path from "I have heard of worktrees" to "I cannot believe I lived without these".
+
+## The discipline part of the title
+
+I called this a development discipline, not a trick. Let me explain why.
+
+A trick is something you reach for occasionally. A discipline is something you build your workflow around, so that the right thing is also the default thing.
+
+Worktrees only really pay off when you stop thinking of them as a tool for emergencies. They are how you organise simultaneous concerns. Feature in one. Hotfix in another. PR review in a third. AI experiment in a fourth. Each one has a desk. None of them step on the others. The cost of switching is `cd`, which is the cheapest thing your shell can do.
+
+Once you operate this way, the old stash-checkout-rebase-pop dance starts to feel like something from a different era. Like writing CSS without a preprocessor. Or deploying without containers. The new way is so much calmer that the old way starts to seem actively user-hostile.
+
+That is when I knew it had become a discipline and not a trick. When I stopped reaching for stash. When my default response to an interrupt became "let me spin up a worktree" instead of "let me save what I have in some fragile way I hope I can restore later".
+
+If you take one thing from this blog, take that. Stop stashing. Start worktreeing. Your evenings will thank you.
+
+That is pretty much it from my side today. Let me know what you think, or if you have been through this exact stash-rebase-pop horror and never want to go back to it. Those stories are always the best ones. Catch you in the next blog.
