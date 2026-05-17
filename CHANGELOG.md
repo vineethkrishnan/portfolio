@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.43](https://github.com/vineethkrishnan/portfolio/compare/v0.0.42...v0.0.43) (2026-05-17)
+
+
+### Features
+
+* **blog:** skills are dotfiles with subagents ([#90](https://github.com/vineethkrishnan/portfolio/issues/90)) ([c155bb5](https://github.com/vineethkrishnan/portfolio/commit/c155bb503ec7b49053dfb9474f7f12564a5d7635))
+
 ## [0.0.42](https://github.com/vineethkrishnan/portfolio/compare/v0.0.41...v0.0.42) (2026-05-15)
 
 
