@@ -1,7 +1,7 @@
 ---
 title: "I treated skills like dotfiles. Then they started spawning subagents."
 description: "My CLAUDE.md was turning into a Frankenstein .bashrc. Skills landed and my first instinct was 'dotfiles for Claude'. Half right. Dotfiles sit, skills move."
-pubDate: 2026-05-16
+pubDate: 2026-05-17
 tags: ["claude-code", "skills", "dotfiles", "developer-workflow", "ai-agents"]
 draft: false
 heroImage: "/blog/skills-are-dotfiles-with-subagents-hero.png"
@@ -17,9 +17,9 @@ So let me back up a little.
 
 ## The CLAUDE.md that ate itself
 
-A while back I noticed my CLAUDE.md had quietly become the longest config file in my home directory. Not the most-edited. Not the most-read. Just the longest. Every new pattern I wanted Claude to follow ended up there. Every formatting rule. Every coding convention. Every typography directive. Every time I caught Claude doing something I did not like, I would tab over to that file and tack on another paragraph.
+A while back I noticed my CLAUDE.md had quietly become the longest config file in my home directory. Not the most-edited. Not the most-read. Just the longest. Every hard lesson I had paid for in production ended up there. The schema-verification protocol I built after one too many "column does not exist" errors. The pre-merge audit checklist that catches regressions in a diff. The refactor playbook that forces every rename to trace its call sites before touching code. Every time a bug came back to bite me, I would tab over to that file and tack on the guardrail I wished had been in place.
 
-Some sections genuinely belonged there. A rule like "never assume, verify before you respond or troubleshoot" is exactly the kind of always-on guardrail you want every session to start with. But other sections were not like that. The commit-message section was a long block on formatting that I do not need loaded into context when I am writing prose. I need it loaded when I am about to commit. Different moment, different need.
+Some sections genuinely belonged there. A rule like "never assume, verify before you respond or troubleshoot" is exactly the kind of always-on guardrail you want every session to start with. But other sections were not like that. The schema-verification protocol was a long, layered procedure with its own decision tree, fallback commands, and known gotchas for the legacy database. I do not need that loaded when I am writing prose or wiring up a frontend component. I need it loaded the moment I am about to touch a query. Different moment, different need.
 
 But CLAUDE.md does not care. CLAUDE.md is sourced every time. It is the .bashrc of the Claude world. Whatever you put in there shows up in every conversation, whether you wanted it there or not.
 
@@ -38,7 +38,7 @@ The vibe is right. Skills are:
 
 That is dotfiles. That is exactly the model. The same way I keep a `.zshrc` because I do not want to retype aliases on every machine I touch, I now reach for skills because I do not want to paste the same workflow rules every time I am about to do something specific.
 
-So I started moving things out of CLAUDE.md. The commit-message section became a commit-message skill. The typography rules became a typography skill. The code-review checklist became a review skill. Slowly, CLAUDE.md shrank. The bloated file became leaner, and the sections that remained genuinely deserved to be always-on.
+So I started moving things out of CLAUDE.md. The schema-verification protocol, with its full audit machinery and database-specific gotchas, became a verify-before-query skill. The pre-merge audit became a ship-readiness skill, complete with diff scanning, regression-pattern flagging, and a test-coverage gate. The refactor playbook, the one that traces every call site before allowing a rename, became its own skill. Slowly, CLAUDE.md shrank. The bloated file became leaner, and the sections that remained genuinely deserved to be always-on.
 
 ## The split that worked
 
@@ -53,22 +53,46 @@ Always-on, universal rules stayed in CLAUDE.md:
 
 On-demand, situational rules moved into skills:
 
-- Commit message formatting (only matters when you are about to commit)
-- Code review checklists (only matters during review)
-- Writing-style enforcement (only matters when producing prose)
-- Workflow patterns specific to a tool (only matters when using that tool)
+- Schema-verification protocol (only matters when you are about to query or migrate a database)
+- Pre-merge ship-readiness audit (only matters right before you push a branch)
+- Refactor planning playbook that fans out call-site discovery (only matters when you are restructuring a module)
+- Incident triage runbook with parallel log and metric scans (only matters when something is broken in production)
 
 Same way you keep `export PATH=...` in your `.bashrc` but you keep your CLI tools in `/usr/local/bin` and only call them when the task asks for them. Universal stays at the entry point. Specific moves into discrete, callable units.
+
+Here is what that ends up looking like on disk, once you have done a few rounds of moving things out:
+
+```
+~/.claude/
+├── CLAUDE.md                       # the lean .bashrc - always loaded
+└── skills/
+    ├── verify-before-query/
+    │   └── SKILL.md                # schema audit, fallback commands, gotchas
+    ├── ship-readiness/
+    │   ├── SKILL.md                # pre-merge checklist
+    │   └── references/
+    │       └── regression-patterns.md
+    ├── refactor-plan/
+    │   └── SKILL.md                # fans out call-site tracing
+    └── incident-triage/
+        ├── SKILL.md                # parallel log + metric scans
+        └── references/
+            └── known-fingerprints.md
+```
+
+The shape is the point. `CLAUDE.md` sits at the top, lean and universal. Each skill is its own folder with its own `SKILL.md` and its own supporting references, isolated from every other skill. Same mental model as `~/.config/` or `/usr/local/bin/`. You can `git` track the whole tree, share it with a teammate, swap one skill out without touching the others.
 
 The split clicked for me when I noticed a section in my CLAUDE.md had been reduced to a one-liner that pointed to a skill, saying in effect "the rule is X, see the skill for the full rationale and the audit machinery." That single line is the analogy made literal. The always-on rule lives at the entry point. The heavy machinery lives in the skill that gets invoked when the situation calls for it.
 
 ## Then the analogy broke
 
+![A central glowing folder dispatching three small helper robots through separate portals to do parallel tasks, with a single report scroll returning to the center, flat illustration in soft pastel colors.](/blog/skills-fan-out.png)
+
 I sat with the dotfiles-for-Claude framing for a bit and felt pretty pleased with myself. Then I noticed a difference I could not ignore.
 
 A `.bashrc` is passive. It defines an alias and waits. The alias runs in your shell, in your process, in your context. It does not spin up another shell, hand it a task, get back a summary, and let you move on. That is a different category of thing.
 
-A skill can do exactly that. A well-shaped skill can fan out helpers for the parallelisable parts of a task (auditing many files at once, scanning long histories, comparing against long lists) and bring back a single report you can act on. The grunt work runs on a different lane while your own thread stays clean. That is not something a dotfile has ever done in the history of dotfiles.
+A skill can do exactly that. A well-shaped skill can fan out helpers for the parallelisable parts of a task. Tracing every call site of a function before approving a rename. Scanning a year of deploy logs against an error fingerprint during incident triage. Auditing a large diff against a long list of regression patterns before letting the merge go through. The grunt work runs on its own lane and comes back as a single report, while your main thread stays clean and ready to make the actual decision. That is not something a dotfile has ever done in the history of dotfiles.
 
 A dotfile is a snapshot of preferences. A skill is a snapshot of preferences plus a workflow. The workflow is yours to shape, and when the work is bigger than one prompt, it can call for backup.
 
@@ -78,7 +102,7 @@ Three things shifted in how I think about my AI setup once this clicked.
 
 **One.** I stopped putting per-task rules into CLAUDE.md. Whenever I am about to add a section, I ask myself, is this rule something I want Claude to know every time, or only when I am doing a specific kind of task? If it is the second, it goes into a skill. CLAUDE.md stays close to what `.bashrc` should be. Tight. Universal. Mostly stable.
 
-**Two.** I started thinking about skill-internal delegation as a first-class design choice. When tuning a skill, I now decide which steps should fan out and which should stay single-threaded. The research-heavy steps (auditing files, scanning histories, comparing against long lists) get dispatched. The judgement-heavy steps (deciding, summarising, picking the right phrasing) stay in the main thread. A skill is not just a prompt. It is a workflow, and a workflow can dispatch.
+**Two.** I started thinking about skill-internal delegation as a first-class design choice. When tuning a skill, I now decide which steps should fan out and which should stay single-threaded. The research-heavy steps (call-site tracing, regression-pattern auditing, log scanning, dependency-tree walking) get dispatched to subagents. The judgement-heavy steps (choosing the migration strategy, picking which regressions are real, deciding what to ship) stay in the main thread. A skill is not just a prompt. It is a workflow, and a workflow can dispatch.
 
 **Three.** Sharing got more interesting. When you share a skill with a teammate, you are not just sharing your preferences. You are sharing a small workflow that knows how to recruit help when the task is bigger than itself. That changes the conversation. "Use my skill" becomes closer to "use my whole approach, including how it scales when the work is heavy."
 
@@ -95,6 +119,8 @@ Third, sharing skills across machines and teams is not yet a solved problem the 
 So the right framing is closer to this. Dotfiles is the entry-point analogy. Once you internalise the analogy, you can start to see that skills are a strict superset. They borrow the dotfiles vibe and then add agency on top.
 
 ## The mental model I landed on
+
+![Two cartoon vertical stacks side by side: a terminal-styled stack on the left with a config scroll on top and small toolbox icons below, mirrored by a robot-styled stack on the right with the same shape but glowing module folders, connected by a thin dotted arrow showing the parallel architecture, flat illustration in soft pastel colors.](/blog/skills-parallel-stacks.png)
 
 Here is how I now think about the whole stack.
 
