@@ -1,0 +1,440 @@
+---
+title: "My Raspberry Pi could not carry the dream. A 2018 Mac mini could."
+description: "I wanted a small army of agents running 24x7 and a place to host all my homelab apps. The Pi was never going to do it. A colleague handed me his 2018 Mac mini and the whole thing took shape in one sitting."
+pubDate: 2026-05-18
+tags: ["homelab", "mac-mini", "tailscale", "docker", "claude-code", "self-hosting"]
+draft: false
+heroImage: "/blog/mac-mini-homelab-hero.png"
+---
+
+# My Raspberry Pi could not carry the dream. A 2018 Mac mini could.
+
+![A 2018 Mac mini sitting on a wooden desk with small glowing icons hovering above it representing a vault, a notification bell, a workflow, and a small robot, soft editorial illustration, warm pastel colors.](/blog/mac-mini-homelab-hero.png)
+
+> **TL;DR**: I had a Raspberry Pi running a couple of small things at home. It was a good guy for small things. But I wanted a homelab that hosts my self hosted apps and also runs a small army of agents on my command, 24x7. The Pi would just die. A colleague had a 2018 Mac mini sitting unused, I told him what I had in mind, he handed it over without thinking twice. I wiped it clean, took it from Big Sur to macOS 15 Sequoia, installed Ghostty and my usual terminal things, then sat down after work and did not stop until past midnight. Vaultwarden, Uptime Kuma, ntfy, n8n, an agent webhook that runs Claude Code, all behind Tailscale and Caddy, with restic backups going to Backblaze B2. This post is the story of that one long evening, including the four or five places I got stuck.
+
+## The Pi was never going to do it
+
+I have been running a **Raspberry Pi 4** at home for a while. It was doing simple things, Pi-hole, a couple of cron jobs, a tiny dashboard. For that kind of work the Pi is perfect, no complaints.
+
+But I had a different dream sitting in my head for some time. I wanted to run my own little army of agents. Not just one assistant on my laptop, but a setup at home that listens to me from anywhere, runs Claude Code on a prompt, sends the result to my phone, and goes back to waiting. On top of that I wanted to host my own password manager, my own push notifications, my own uptime checks, my own workflow tool. Basically the things I keep handing over to free tiers of various SaaS, brought home.
+
+Dreams have wings like a phoenix and they want to fly sky high. But reality has weight. The Pi was not going to lift it. 4 gigs of RAM, one SoC, no real headroom. The moment I add Docker and a couple of containers and an agent that spawns subprocesses, the poor guy is on the floor.
+
+So the dream was on hold.
+
+## When the Mac mini arrived
+
+A colleague of mine had a 2018 Mac mini sitting at his place, unused. I knew about it. One day we were talking and I told him exactly what I wanted to build with it. The agent army, the homelab apps, the whole thing. He did not even think twice. He said take it. A great guy, no hesitation, no hold back. I owe him a proper dinner.
+
+The mini arrived. Spec is 2018 spec, so by 2026 standards it is a baseline machine. 8GB RAM, 128GB SSD, Intel inside. For my homelab that is more than fine. The Pi would have died running half of it, this one will not even sweat.
+
+It came with macOS 11 Big Sur on it. I wanted at least macOS 13, ideally the latest. Either way I was going to wipe the whole disk and start fresh, so the old OS did not matter.
+
+## Wiping it clean
+
+First try was the usual one. Hold **Cmd-R** during boot to go into Recovery. The Mac mini just kept booting into Big Sur as if I had not pressed anything. Tried it a couple of times. Same result.
+
+So I went to **Internet Recovery** instead. That is **Cmd-Option-R** (Cmd-Alt-R on the same key) held during boot. The screen showed a spinning globe instead of the Apple logo, the Mac fetched the recovery image straight from Apple's servers over Wi-Fi, and after a few minutes I was in the proper recovery utility. Slower, but it works when the local recovery partition decides it does not want to talk.
+
+From there it was Disk Utility, wipe the internal SSD completely, no traces of the previous owner. Then Reinstall macOS from the same recovery menu, let it pull Big Sur back over the internet.
+
+Once Big Sur was back on a clean disk, I went to Software Update and walked it all the way up to **macOS 15 Sequoia**. Big update, two reboots, no drama.
+
+Happy face. Clean disk, latest OS, ready to be a server.
+
+## First, the terminal niceties
+
+Before anything serious I do my usual [terminal ritual](/blog/my-zshrc-archaeology). I install **Ghostty** as my terminal, pull in my dotfiles, get the same prompt and aliases I am used to on every machine. If you want the long story behind that 350-line `.zshrc` and the 68-line `.bash_aliases` time capsule it grew out of, that whole archaeology is in its own blog. About 20 minutes of dotfile-shuffling later, the Mac mini felt like my own machine.
+
+### Why Ghostty here, when I run iTerm2 on the Air
+
+A small detour worth making, because people ask. On my MacBook Air, the one I use every day for actual work, my terminal is **iTerm2**. Has been for years. The reason is simple, iTerm2 is rich. Profiles per project with their own colors and fonts, split panes that can each be a different profile, hotkey window I can summon with a keystroke, instant replay of past output, shell integration that knows where a command starts and ends, the toolbelt, the status bar, badges, triggers, captured output, password manager, semantic history. Eleven years of polish piled into one app. For a working laptop where I am juggling four tabs of SSH plus a Vim plus a long-running build, that pile of features earns its keep every day.
+
+On the Mac mini, the calculation flips entirely. This box is a server. I am not going to sit in front of it for eight hours debugging Rust. Most of the time it does its job with no terminal open at all. When I do open a terminal here, it is for a quick check, a `docker compose ps`, a `tail -f`, maybe a `restic snapshots`. Short visits, not full work sessions.
+
+For that shape of usage, **Ghostty** wins on three things.
+
+- **It is fast and small.** Native, GPU-rendered, written in Zig, starts almost instantly. A homelab server has better things to do with its 8 GB of RAM than feed a feature-heavy terminal that I open twice a day. Ghostty stays out of the way.
+- **One config file, no clicking through preferences.** iTerm2's config lives in a binary plist that you can technically check into git but in practice you set up through twenty tabs of GUI preferences. Ghostty has a single text file at `~/.config/ghostty/config`, plain key-value, version-controllable, easy to push around with my dotfiles. On a server I rebuild rarely but cleanly, that one file is the whole story.
+- **Less surface area to break.** No plugin system, no AppleScript dictionary, no triggers, no coprocesses, no profile imports, no semantic history. Just a terminal. Fewer moving parts means fewer things to go wrong on a machine I want to leave running for months.
+
+It is not that Ghostty is better than iTerm2. It is that the two terminals are tuned for different jobs. iTerm2 is a workshop, Ghostty is a clean utility room. The Mac mini gets the utility room. The Air stays the workshop. Both end up with the same prompt and the same aliases through dotfiles, so the muscle memory does not break when I switch.
+
+With the terminal sorted, I sat down with a plan already in my head. I knew exactly what I wanted on this box, in what order, and how each piece should talk to the next. Choosing Colima over Docker Desktop, Tailscale over a raw VPN, Caddy over Nginx, restic over rclone, the four apps in the stack, the launchd schedule for backups, the port layout, all of it was decided before I ran the first command. The shell was open and that is where the real work happened.
+
+What I thought would be a 2 hour job stretched into a full evening that ran past midnight, mostly because of the gotchas I am about to walk through. The actual command-running was fast. The "wait, why is this not working" parts were not, and those were the parts where I sat with the logs, read them carefully, and worked out what to change.
+
+Below is the same setup, phase by phase, with the four or five places I got stuck and what unstuck them.
+
+## Phase 1, making it a 24x7 server
+
+A Mac is a laptop OS by default. It wants to sleep, dim the screen, idle the disks. For a homelab I want the opposite. `pmset` is the way to tell it.
+
+```bash
+sudo pmset -a sleep 0
+sudo pmset -a disksleep 0
+sudo pmset -a autorestart 1
+sudo pmset -a womp 1
+sudo pmset -a tcpkeepalive 1
+```
+
+Translation, in order.
+
+- `sleep 0`, the system never sleeps.
+- `disksleep 0`, the disks never spin down.
+- `autorestart 1`, automatic restart after a power cut.
+- `womp 1`, wake on magic packet so I can wake it remotely.
+- `tcpkeepalive 1`, keep TCP alive across long-lived connections.
+
+I left `displaysleep` at the default 10 minutes, because I sometimes plug a monitor into this thing and I do want the screen to go off when I am not using it.
+
+To check what stuck, `pmset -g` shows the current settings:
+
+![pmset -g output showing sleep 0, disksleep 0, autorestart 1, tcpkeepalive 1, womp 1.](/blog/mac-mini-homelab-pmset.png)
+
+Then the firewall. I turned on the application firewall but kept it permissive, signed software allowed, stealth mode off. The reason is my threat model is the internet, not my LAN. Tailscale is going to be the real perimeter. If I lock the firewall down hard now, I will spend the next hour fighting it for every brew service I install.
+
+```bash
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsigned on
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setallowsignedapp on
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode off
+```
+
+Now the first stuck moment.
+
+### SSH needs a GUI click
+
+I wanted Remote Login on so I could ssh into this thing from my laptop. The classic CLI way is `sudo systemsetup -setremotelogin on`. On macOS 13 and later that command will not work unless the calling binary has Full Disk Access. So even with sudo, it refuses.
+
+The fastest fix is the GUI toggle. Open System Settings, in the search box on the sidebar type **Remote Login**, click the result, toggle it on. 15 seconds, done. Trying to fight it from the terminal is not worth the rabbit hole.
+
+This was the first time the setup made me reach for the trackpad. It will not be the last.
+
+With the OS pinned to "server mode" and SSH up, the box was ready to be reached from somewhere other than this desk.
+
+## Phase 2, Tailscale and the menu-bar trap
+
+For remote access I went with Tailscale. Free tier, WireGuard underneath, MagicDNS gives every device a name on my private network. From anywhere in the world I can reach this Mac mini the way I would reach `localhost`.
+
+Install was a one liner.
+
+```bash
+brew install --cask tailscale-app
+```
+
+Then I tried to log in from the CLI. It failed. Reason, the standalone cask uses a System Extension and that extension needs user approval the very first time. Until you sign in once through the menu-bar app, the CLI is a paperweight.
+
+So I clicked the Tailscale icon in the menu bar, picked Log in, the browser opened, I signed in with my account, came back. Now `tailscale status` showed the Mac mini on my tailnet.
+
+```bash
+tailscale status
+tailscale ip -4
+```
+
+The whole device got a stable name like `mac-mini.tailXXXX.ts.net` over MagicDNS. From now on, anywhere I am, I can reach this hostname as if the Mac mini was in the same room.
+
+Good. The perimeter was sorted. Time for the actual reason I bought into all this.
+
+## Phase 3, the agent webhook
+
+Now the fun part. The agent army I had been dreaming about.
+
+The idea is simple. A small HTTP server on the Mac mini listens for a POST. When a POST comes in with a prompt, it spawns Claude Code as a subprocess, lets Claude do whatever the prompt asked, captures the output and returns it. Optionally it can also push the result to my phone.
+
+I kept this deliberately small. Python stdlib, no Flask, no FastAPI. About 150 lines of Python that does these three things.
+
+- `GET /healthz`, no auth, returns ok if the server is up.
+- `POST /trigger`, bearer-auth, body has a `prompt` and a few optional knobs. Spawns `claude -p "<prompt>" --output-format json`, returns the JSON output.
+- `POST /notify`, bearer-auth, posts to ntfy so the result lands on my phone.
+
+The server binds to `127.0.0.1:8765`, so it is only reachable from the Mac mini itself. Tailscale plus Caddy will expose it later if I want it from outside. The bearer token lives in `~/homelab/secrets/agent_token`, mode 600, generated once with `openssl rand -hex 32`.
+
+To make it survive reboots I wrote a launchd plist at `~/Library/LaunchAgents/com.vineeth.agent.plist` with `RunAtLoad=true` and `KeepAlive=true`. If the process dies, launchd brings it back. Logs go to `~/homelab/logs/agent.{log,err.log}`.
+
+The two CLI helpers that go on top:
+
+```bash
+# Fire a prompt, get JSON back.
+agent "summarize what's on my calendar today"
+
+# Same, plus push the result to my phone.
+agent --notify "scan ~/code/foo for security issues"
+
+# Liveness probe.
+agent --healthz
+```
+
+The healthz probe is the satisfying one. The first time it came back green, the agent army had its first soldier alive.
+
+![Output of agent --healthz returning a JSON status of ok.](/blog/mac-mini-homelab-agent-healthz.png)
+
+One nice surprise here. The agent does not need an Anthropic API key. It shells out to the `claude` CLI as a subprocess, which uses whatever auth my local `claude` CLI already has. Since I am logged into Claude Code on this Mac, the agent inherits that login. No separate billing line, no key rotation, no fuss. If I ever want an independent non-interactive key, I can add one to the plist, but for now this is enough.
+
+So the agent core was running. Now to put a friendly face in front of all this so my future self does not have to remember a port number for every service.
+
+## Phase 4, Caddy, and the auto_https trap
+
+I wanted one nice landing page that lists all my homelab apps, and I wanted Caddy in front of everything as a reverse proxy. Caddy is great for this. One file, sensible defaults, internal certs.
+
+```bash
+brew install caddy
+```
+
+I wrote a Caddyfile at `~/homelab/caddy/Caddyfile`. The shape is a small gruvbox-themed landing page served at `/` that links to every service, plus a reverse-proxy vhost per service. Starting with the vhost part:
+
+```caddyfile
+{
+    auto_https off
+}
+
+vault.example.tailnet.ts.net {
+    reverse_proxy 127.0.0.1:8222
+}
+
+uptime.example.tailnet.ts.net {
+    reverse_proxy 127.0.0.1:3001
+}
+
+ntfy.example.tailnet.ts.net {
+    reverse_proxy 127.0.0.1:8088
+}
+
+n8n.example.tailnet.ts.net {
+    reverse_proxy 127.0.0.1:5678
+}
+```
+
+`auto_https off` because I assumed Tailscale would handle TLS and Caddy should just do plain HTTP. Started the service.
+
+```bash
+brew services start caddy
+```
+
+The four hosts came up on `:80` but every request was returning the wrong thing. Some were dropping connections. Took me a minute to read the Caddy log.
+
+Found it. `auto_https off` does not just disable the redirect from HTTP to HTTPS. It disables certificate provisioning too. So the four virtual hosts never got leaf certs and Caddy was confused about what to serve. The fix is one word.
+
+```caddyfile
+{
+    auto_https disable_redirects
+}
+```
+
+`disable_redirects` keeps Caddy's internal cert management on, just stops it from auto-redirecting plain HTTP requests to HTTPS. That is exactly what I wanted. Reload Caddy, the four vhosts are healthy, Vaultwarden returns 200, Uptime Kuma returns 302.
+
+![Caddy Caddyfile diff showing auto_https off replaced with auto_https disable_redirects, the one-word fix that unbroke cert provisioning.](/blog/mac-mini-homelab-caddy-fix.png)
+
+This is the kind of thing you only learn by hitting it. The Caddy docs do say `auto_https off` disables both, but I had not parsed that line carefully. One word, half an hour gone.
+
+### MagicDNS does not resolve subdomain prefixes
+
+There was a second smaller catch right after. Tailscale MagicDNS gives each device a stable name like `mac-mini.tailXXXX.ts.net`. What it does **not** do, is resolve subdomain prefixes like `vault.tailXXXX.ts.net`. So my Caddy vhosts named `vault.<tailnet>.ts.net`, `uptime.<tailnet>.ts.net`, etc, were not reachable from a phone or laptop on the tailnet, because the names did not resolve.
+
+The quick fix was to skip the pretty subdomains for now and just reach each service on the device hostname plus its port.
+
+| Service        | URL                                                       |
+|----------------|-----------------------------------------------------------|
+| Vaultwarden    | `http://mac-mini.tailXXXX.ts.net:8222`                    |
+| Uptime Kuma    | `http://mac-mini.tailXXXX.ts.net:3001`                    |
+| ntfy           | `http://mac-mini.tailXXXX.ts.net:8088`                    |
+| n8n            | `http://mac-mini.tailXXXX.ts.net:5678`                    |
+| Agent          | `http://mac-mini.tailXXXX.ts.net:8765`                    |
+
+These work over Tailscale's WireGuard tunnel so plain HTTP is fine inside the tailnet. The Caddy subdomain vhosts stay configured, but they are sitting unused until I decide to do `/etc/hosts` entries on every client or move to Tailscale Serve. Which I did, but later in the story.
+
+Routing done for now. Time to stand up the actual things being routed.
+
+## Phase 5, the Docker stack via Colima
+
+Docker Desktop on macOS is a heavy beast. I went with **Colima** instead, which gives you a Lima VM running Docker, all from the CLI, no GUI.
+
+```bash
+brew install colima docker docker-compose
+colima start --cpu 4 --memory 6 --disk 60
+```
+
+4 CPUs, 6 GB RAM, 60 GB disk for the VM. That leaves enough for the Mac itself to breathe. To make sure Colima starts on every boot I wrote a small launchd plist that only calls `colima start` if it is not already running, so it is idempotent.
+
+Then the actual stack. One docker-compose file at `~/homelab/stack/docker-compose.yml`. All four containers bound to `127.0.0.1` only, all with `restart: unless-stopped`, all with their data directories under `~/homelab/data/`.
+
+| Service       | Port | Purpose                                       |
+|---------------|------|-----------------------------------------------|
+| vaultwarden   | 8222 | Bitwarden compatible password manager         |
+| uptime-kuma   | 3001 | Service and endpoint uptime checks            |
+| ntfy          | 8088 | Push notifications to my phone                |
+| n8n           | 5678 | Visual workflow automation                    |
+
+```bash
+cd ~/homelab/stack
+docker compose up -d
+docker compose ps
+```
+
+All four green.
+
+![docker compose ps output showing vaultwarden, uptime-kuma, ntfy and n8n containers all up.](/blog/mac-mini-homelab-stack-ps.png)
+
+To update everything later, the two-line dance is `docker compose pull && docker compose up -d`. Easy.
+
+### A macOS 15 thing worth knowing
+
+While testing, I noticed that hitting `http://<own-LAN-IP>:<port>` from the same Mac was returning **Empty reply from server**, even though TCP was accepting. This is a macOS 15 Local Network privacy behavior. It does not affect `127.0.0.1` and it does not affect access over Tailscale, only the case where the Mac is talking to itself via its LAN IP. If I ever want LAN access from other devices in the house, the fix will be a permission grant in System Settings, Privacy and Security, Local Network. For now I do not need it because Tailscale handles all access from outside the Mac.
+
+## Phase 6, ntfy and the topic mismatch
+
+ntfy is a tiny push-notification service. You publish to a topic, anyone subscribed to that topic gets a push. I run my own ntfy in Docker, so the topic name itself acts as the shared secret. Mine is a 16-character random hex string stored in `~/homelab/secrets/ntfy_topic`.
+
+The wrapper command is just:
+
+```bash
+notify "title" "body"
+notify --high "alert" "something bad just happened"
+```
+
+I tested the server side first by curling it directly. The server happily logged a publish event. So far so good.
+
+Then I installed the ntfy app on my phone, pointed it at the Tailscale URL, subscribed to my topic, and sent a test. Nothing. Phone was silent.
+
+The ntfy server log said `subscribers=1, topics_active=2`. That number is what gave it away. Two active topics means the publisher and the subscriber are on different topic names. The phone was subscribed, but to a different string than what I was publishing to. Some small typo on my phone screen when I added the topic.
+
+I opened the ntfy app on the phone, long-pressed the subscription, edited the topic, pasted the exact 16-character hex string from `~/homelab/secrets/ntfy_topic`. Tried again. Phone buzzed.
+
+Small bug, but it is the kind of thing that wastes 20 minutes if you trust the phone-side input.
+
+Notifications working. On to the bit I was most looking forward to.
+
+## Phase 7, Vaultwarden and the localhost-only crypto
+
+Now the moment I was looking forward to. Bringing up Vaultwarden, the Bitwarden compatible self-hosted password manager. I opened it from my laptop using the Tailscale URL, `http://mac-mini.tailXXXX.ts.net:8222`. Clicked Create account. Got a browser error.
+
+Web crypto refuses to run on a non-HTTPS origin, except for `localhost` and `127.0.0.1`. Both of those are treated as secure contexts by browsers, so plain HTTP works there. But `mac-mini.tailXXXX.ts.net` is not in that whitelist. So the signup form rendered, but the moment it tried to derive a key, the browser blocked it.
+
+The quick workaround was to do the signup directly on the Mac mini's own browser, hitting `http://127.0.0.1:8222`. That worked first try because of the localhost exception. But this was not a permanent fix. I wanted to access Vaultwarden from my phone too. Plain HTTP over Tailscale would not be enough for that.
+
+The clean fix is **Tailscale Serve**. Quick intro for anyone who has used Tailscale but not Serve. Serve is a built-in feature on top of plain Tailscale that lets you front a local port with real Let's Encrypt HTTPS on your `*.ts.net` hostname. So instead of `http://mac-mini.tailXXXX.ts.net:8222` you get `https://mac-mini.tailXXXX.ts.net/`, with a publicly-trusted cert that any browser trusts, all still inside the WireGuard tunnel. No certbot, no `/etc/hosts` tricks, no self-signed warnings.
+
+Serve needs two one-time toggles in the Tailscale admin console first. Enable Serve for the node, enable HTTPS certificates for the tailnet. Both are clicks in the admin web UI.
+
+After that I told Tailscale Serve to map ports.
+
+```bash
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8222   # Vaultwarden
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:3001  # Uptime Kuma
+sudo tailscale serve --bg --https=10000 http://127.0.0.1:8088 # ntfy
+sudo tailscale serve --bg --https=10001 http://127.0.0.1:5678 # n8n
+```
+
+### The port 443 squat
+
+The first command failed with `ERR_CONNECTION_CLOSED` from the browser. Reason, Caddy was still listening on `:443`. Tailscale Serve also wants `:443`. They cannot share. So I took Caddy off `:443` entirely (`auto_https disable_redirects` keeps it on `:80` only) and let Tailscale own all the HTTPS.
+
+After that the four services were on real HTTPS, with real certs:
+
+| Service     | URL                                                       |
+|-------------|-----------------------------------------------------------|
+| Vaultwarden | `https://mac-mini.tailXXXX.ts.net/`                       |
+| Uptime Kuma | `https://mac-mini.tailXXXX.ts.net:8443/`                  |
+| ntfy        | `https://mac-mini.tailXXXX.ts.net:10000/`                 |
+| n8n         | `https://mac-mini.tailXXXX.ts.net:10001/`                 |
+
+I reloaded Vaultwarden on the tailnet URL, the browser was finally happy, signup went through.
+
+One housekeeping thing I did right after the first account, change `SIGNUPS_ALLOWED` to `false` in the compose file and bounce the container. Otherwise anyone who reaches the URL can sign up. Closing that door is a 10-second job.
+
+## Phase 8, Uptime Kuma and the HEAD vs GET trap
+
+Uptime Kuma was easy. Open the web UI on its port, walk through the first-run wizard, add monitors for the four services and the agent. There was one gotcha here too.
+
+By default, Uptime Kuma fires **HEAD** requests for HTTP checks. ntfy's `/v1/health` only answers **GET**. HEAD returns 404. So Kuma was reporting ntfy as down, even though ntfy was perfectly fine.
+
+The fix is one dropdown change. Edit the monitor, scroll to HTTP Options, change Method from HEAD to GET. Save. Green within one heartbeat.
+
+While I was there I switched all the monitors to GET to keep them consistent, since some upstreams quietly return 200 on HEAD and some do not. Always-GET is safer for this kind of liveness check.
+
+The Kuma monitor list now has each service plus a ping to the Caddy landing page, all green. If anything goes red, Kuma is configured to push to ntfy, which means it pings my phone within a heartbeat. That closes the monitoring loop.
+
+## Phase 9, restic backups to Backblaze B2
+
+The last brick. None of this homelab is useful if a power surge or a disk failure takes the data with it.
+
+I used **restic** because I already know it inside out. I have been running it for backups for years, and at one point the cron-and-restic setup I had outgrew itself enough that I wrote my own NestJS backup service on top of it called [**backupctl**](/blog/building-backupctl). So picking restic for the homelab was the easy part. It is small, encrypts client-side, deduplicates, supports a bunch of remotes including Backblaze B2, and I know its quirks like a friend's bad jokes.
+
+For the destination I went with **Backblaze B2**. At work we use a Hetzner Storage Box for company backups and it serves us very well, fixed monthly fee, plenty of space, predictable bill. The smallest one, BX11, is €3.20 a month for 1 TB. Cheap as chips at company scale.
+
+For a personal homelab the math is a bit different. I am pushing only a few hundred MB a night, and after restic dedup the whole thing stays well under 10 GB for the foreseeable future. B2's first 10 GB are free, and beyond that it is roughly seven dollars per terabyte per month. So for my actual usage right now, B2 lands at zero dollars a month. A fixed €3.20 on Hetzner would also be fine, it is not exactly going to bankrupt anyone, but free is free, and pay-as-you-go has the right shape for a side project that may or may not grow.
+
+If my homelab data ever crosses a terabyte, the math flips and Hetzner becomes the cheaper one. That is the day I will switch. For now, B2.
+
+```bash
+brew install restic
+```
+
+The wrapper script at `~/homelab/backup/backup.sh` sources a secrets file with the B2 keys and the restic password, then runs:
+
+```bash
+restic backup \
+  --exclude-file=~/homelab/backup/excludes.txt \
+  ~/homelab ~/.zshrc ~/.gitconfig ~/.ssh/config
+
+restic forget --prune \
+  --keep-daily 7 \
+  --keep-weekly 4 \
+  --keep-monthly 6
+```
+
+Excludes are the usual suspects, `node_modules`, caches, log files, the env file itself.
+
+A launchd plist at `~/Library/LaunchAgents/com.vineeth.backup.plist` runs this every day at 03:30. If the env file is missing or empty, the wrapper logs a polite message and exits 0, so the schedule does not crash on the days I have not yet configured credentials.
+
+For the credentials part I went to Backblaze, created a B2 account, made a private bucket, generated an application key with bucket-scoped read+write, copied the keyID, applicationKey, and the bucket name into `~/homelab/secrets/restic-env.sh`. The restic password I generated locally with `openssl rand -base64 36`, then wrote it down outside this Mac in two places, because if I lose this password, every snapshot becomes unrecoverable noise.
+
+First snapshot pushed in under a minute, 5.9 MiB in, 256 KiB out after dedup.
+
+![restic snapshots output showing the first snapshot pushed to B2 with snapshot ID and size.](/blog/mac-mini-homelab-restic.png)
+
+The retention rule keeps 7 daily, 4 weekly, 6 monthly. So at any time my B2 bucket has rolling coverage of the last week, the last month, and the last half year, with restic pruning the rest. Daily fire at 03:30 is wired up, future failures will push a high-priority ntfy notification to my phone.
+
+## What I have, all together
+
+That is the homelab. One long evening that went past midnight, one Mac mini that used to live in a colleague's drawer, no SaaS bills.
+
+- **Vaultwarden** at `https://mac-mini.tailXXXX.ts.net/`, my password vault.
+- **Uptime Kuma** at `:8443`, watching my services and the agent.
+- **ntfy** at `:10000`, pushing alerts and agent results to my phone.
+- **n8n** at `:10001`, where I will build workflow automations from now on.
+- **Agent webhook** at `:8765`, runs Claude Code on demand from a phone shortcut, a cron job, or an n8n flow.
+- **Caddy** on `:80`, serves a gruvbox themed landing page that lists everything.
+- **Netdata** on `:19999`, machine-level monitoring.
+- **Restic** to B2, daily at 03:30, 7-4-6 retention.
+
+The agent army I had been dreaming about now has a barracks. The phone shortcut I wired up after this is one tap. Tap, speak the prompt, the Mac mini does the work, the result lands as a push notification on my phone. Pi could not carry that. Mac mini did not break a sweat.
+
+## What I would tell anyone doing this
+
+A few things that would have saved me time if I had read them before starting.
+
+**The Mac will need GUI clicks.** macOS keeps tightening what the CLI can do without Full Disk Access. SSH Remote Login is one. Tailscale's System Extension is another. Plan for at least three or four short GUI sessions across the setup. Do not try to be a hero with `osascript` workarounds, they break across versions.
+
+**Tailscale is your perimeter.** Once Tailscale is up, your "internet-facing" attack surface drops to roughly zero. So you can stop pretending your local Caddy needs to be a hardened bastion, which is what frees you to keep the firewall permissive and the configs simple. Tailscale Serve on top gives you real HTTPS without certbot. That alone saves an hour.
+
+**Use Colima, not Docker Desktop.** No GUI, no resource hog, no licensing question, starts via launchd. The Docker CLI works exactly the same as on Linux. The only thing you do not get is the Docker Desktop dashboard, which I do not miss.
+
+**One Caddyfile word matters.** `auto_https off` is not the same as `auto_https disable_redirects`. The first one kills certs. The second one keeps certs and only kills the HTTP-to-HTTPS redirect. Read it once carefully.
+
+**HEAD vs GET will burn you once.** Default Uptime Kuma monitors use HEAD. Some health endpoints only answer GET. Set the method explicitly when you add a monitor, it saves a "why is this red" round trip.
+
+**Save the restic password offline before the first backup.** The first `restic backup` initializes the encrypted repo and locks it to that password forever. Lose it and your snapshots are garbage. Paper, second password manager, anywhere that is not this same Mac.
+
+## Where this goes next
+
+The bones are in place. What I want to add on top, in roughly this order, are these.
+
+A small phone shortcut that POSTs to the agent webhook from the home screen, so firing a prompt is one tap and one voice dictation away. An n8n flow that emails me a daily brief at 07:00 from the same agent endpoint. A morning launchd job that runs `agent --notify "morning brief"` so my phone wakes up with one notification instead of five.
+
+And the bigger one I am chewing on, a **Cloudflare Tunnel** in front of one or two of these services on my [vinelabs.de](/blog/how-i-ended-up-buying-vinelabs-de) domain. I already have that domain sitting there as my experiment lane, so something like `lab.vinelabs.de` could front the agent or a public dashboard without ever opening a port on my router. Cloudflare Tunnel gives me a real public URL, real TLS, and Cloudflare Access on top if I want to gate it. The day I want any of this reachable from outside Tailscale, say from a friend's laptop or a colleague's phone, that is the path I will take.
+
+For now, the dream is no longer flapping its wings in vacuum. It has a roof, a barracks, and it sleeps in a 2018 Mac mini that a generous colleague handed me on a weekend, right in the middle of his own family time, without making a big deal of it. That kind of thing sticks.
+
+That is all I had for this one. If you have a Mac mini lying around, even an old one, give it a job. It will surprise you. Catch you in the next blog, take care until then.
