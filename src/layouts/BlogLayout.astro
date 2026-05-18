@@ -309,6 +309,52 @@ const breadcrumbJsonLd = {
     margin: 1.5rem 0;
   }
 
+  .blog-content :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.75rem 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    display: block;
+    overflow-x: auto;
+  }
+
+  .blog-content :global(thead) {
+    background-color: var(--color-bg-code);
+  }
+
+  .blog-content :global(th) {
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-heading);
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+
+  .blog-content :global(td) {
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: top;
+  }
+
+  .blog-content :global(tbody tr:last-child td) {
+    border-bottom: none;
+  }
+
+  .blog-content :global(tbody tr:nth-child(even)) {
+    background-color: color-mix(in srgb, var(--color-bg-code) 40%, transparent);
+  }
+
+  .blog-content :global(td code),
+  .blog-content :global(th code) {
+    font-size: 0.85em;
+    padding: 0.1em 0.35em;
+  }
+
   .blog-extras {
     margin-top: 1rem;
   }
