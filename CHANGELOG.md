@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.44](https://github.com/vineethkrishnan/portfolio/compare/v0.0.43...v0.0.44) (2026-05-18)
+
+
+### Features
+
+* **blog:** mac mini homelab setup with agent webhook and tailscale ([#92](https://github.com/vineethkrishnan/portfolio/issues/92)) ([a4c4ecf](https://github.com/vineethkrishnan/portfolio/commit/a4c4ecf2001e6135ad78cdc74686642eee632d94))
+
 ## [0.0.43](https://github.com/vineethkrishnan/portfolio/compare/v0.0.42...v0.0.43) (2026-05-17)
 
 
