@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.45](https://github.com/vineethkrishnan/portfolio/compare/v0.0.44...v0.0.45) (2026-05-20)
+
+
+### Features
+
+* **blog:** mac mini homelab and cloudflare tunnel posts ([#94](https://github.com/vineethkrishnan/portfolio/issues/94)) ([33e3bc7](https://github.com/vineethkrishnan/portfolio/commit/33e3bc7546d4c7064617f91ff7420039d923f3ab))
+
 ## [0.0.44](https://github.com/vineethkrishnan/portfolio/compare/v0.0.43...v0.0.44) (2026-05-18)
 
 
