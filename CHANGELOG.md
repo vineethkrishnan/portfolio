@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.46](https://github.com/vineethkrishnan/portfolio/compare/v0.0.45...v0.0.46) (2026-05-20)
+
+
+### Bug Fixes
+
+* **blog:** redact real cloudflare tunnel id from config example ([#97](https://github.com/vineethkrishnan/portfolio/issues/97)) ([01a540e](https://github.com/vineethkrishnan/portfolio/commit/01a540e4ffa5cfa8a8a4b7214513bd1a8fd348f5))
+
 ## [0.0.45](https://github.com/vineethkrishnan/portfolio/compare/v0.0.44...v0.0.45) (2026-05-20)
 
 
