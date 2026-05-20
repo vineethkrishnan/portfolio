@@ -1,0 +1,141 @@
+---
+title: "Pointing vinelabs.de at my Mac mini through a Cloudflare Tunnel"
+description: "I had a domain. I had a homelab. A Cloudflare Tunnel was the simplest way to make them point at each other, without opening a single port on my home router."
+pubDate: 2026-05-20
+tags: ["homelab", "cloudflare-tunnel", "mac-mini", "self-hosting", "vinelabs"]
+draft: false
+heroImage: "/blog/cloudflare-tunnel-hero.png"
+---
+
+{/*
+HERO IMAGE PROMPT - paste this into your usual image tool, then delete this comment block:
+
+Prompt:
+A small 2018 Mac mini sitting on a wooden desk, a translucent orange tunnel arching out of it through a soft pastel cloud, with a tiny green vine leaf hovering near the cloud, connecting to a small browser window with a green address bar on the other side, editorial illustration style, warm pastel colors, clean linework, gentle homelab vibe, no text labels.
+
+Dimensions: 1200 x 630 (1.91:1, OpenGraph / social card ratio, matches the other hero images)
+Save as: public/blog/cloudflare-tunnel-hero.png
+*/}
+
+# Pointing vinelabs.de at my Mac mini through a Cloudflare Tunnel
+
+![A 2018 Mac mini on a wooden desk with a soft orange tunnel arching out of it through a pastel cloud, a small green vine leaf hovering near the cloud, connecting to a tiny browser window on the other side, editorial illustration, warm pastel colors.](/blog/cloudflare-tunnel-hero.png)
+
+> **TL;DR**: I have a domain, [vinelabs.de](/blog/how-i-ended-up-buying-vinelabs-de), and a Mac mini at home running my [homelab](/blog/mac-mini-homelab-setup). Until recently those two were strangers. A Cloudflare Tunnel turned out to be the simplest way to connect them - no port forwarding, no certbot, no public IP gymnastics. Two services ended up behind the tunnel, three stayed inside the Tailscale tailnet because they have no business being public. This post is the why and the how.
+
+## Two things that needed to meet
+
+In one corner, [vinelabs.de](/blog/how-i-ended-up-buying-vinelabs-de). A domain I bought one weekend after realising my npm and Composer publishes deserved a proper identity, not my personal GitHub handle. It has been sitting there with a small landing page and not much else.
+
+In the other corner, my [Mac mini homelab](/blog/mac-mini-homelab-setup). Vaultwarden, Uptime Kuma, ntfy, n8n, an agent webhook that runs Claude Code, all behind Tailscale and Caddy, with restic backups going to Backblaze B2. Reachable from anywhere I am logged into my tailnet, which is fine for me, but not great when I want to share a status page with a friend who is not on Tailscale.
+
+The obvious bridge was a Cloudflare Tunnel. I had been chewing on it ever since I wrote the homelab post. So I sat down one evening and finally did it.
+
+## Why a tunnel and not a forwarded port
+
+Quick context for anyone new to this. The "normal" way to expose a service from your home network to the internet is to log into your router, forward a port from your public IP to the box running the service, and pray that your ISP is not putting you behind CGNAT. Some do. Mine kind of does.
+
+A Cloudflare Tunnel flips that around. The `cloudflared` daemon on the Mac mini opens an outbound connection to Cloudflare's edge and holds it. When a request hits `status.vinelabs.de`, Cloudflare sends it back down that already-open connection. The Mac mini then talks to the local service on `127.0.0.1:3001` and ships the response back the same way. Nothing is listening on a public port at home. The router has no idea any of this is happening.
+
+The wins are real.
+
+- No port forward, no router config, no UPnP.
+- It works through CGNAT, because the connection is outbound.
+- TLS is terminated by Cloudflare with a real cert, automatically.
+- I can add Cloudflare Access on top if I want to gate a service with email-based auth, with zero code changes.
+- Free for personal use.
+
+The tradeoff is that all public-side traffic now goes through Cloudflare. I am okay with that for a few hobby services. For something that actually mattered, I would think harder.
+
+## What gets a public URL, and what does not
+
+This was the decision I sat with for a bit before writing a single line of config. Not everything in my homelab deserves a public hostname. The rule I settled on is simple. If a service has strong authentication and a sensible signup story, it can sit on a tunnel. If its only protection is "nobody knows the URL" or "the topic name is the password", it stays inside the Tailscale tailnet, full stop.
+
+That gave me two short lists.
+
+**Behind the tunnel, on vinelabs.de:**
+
+- `home.vinelabs.de`, a small landing page on the apex. Public, read-only, harmless.
+- `status.vinelabs.de`, the Uptime Kuma instance. The visitor-facing dashboard is read-only and useful to share, and Kuma has real authentication on the admin side.
+
+**Tailnet only:**
+
+- **Vaultwarden.** This one is obvious, it is my password vault. Even with Vaultwarden's solid auth, the math is "what is the upside of a public URL for a password manager". Roughly zero. Tailnet only, forever.
+- **n8n.** This one took a beat to articulate properly, so let me. n8n is a workflow automation tool, which is innocent enough on the surface. The catch is that n8n can execute arbitrary code, hit any third-party API, and stores OAuth tokens and API keys for every service my flows talk to, Gmail credentials, Slack tokens, GitHub PATs. Even if I added basic auth in front, the blast radius if anything ever went wrong on the auth layer is too high to think about. An automation engine plus a wallet of credentials sitting behind one login screen is not a thing I want a public URL for. Tailnet is its perimeter, period.
+- **ntfy.** ntfy is a push-notification service. Its security model is, the topic name is the secret. If you know the topic name, you can publish to it (which means push to my phone), and you can also subscribe to it (which means read every notification I receive on that topic). The whole utility of ntfy depends on the topic name staying private. Putting the server on a public URL means anyone scanning the internet could guess topic names brute-force-style, and topic names are not bcrypt-hashed passwords, they are just strings. Inside the tailnet, the only devices that can even reach the ntfy server are mine. The model holds. Outside, it leaks.
+
+If you self-host even a couple of things, you probably know this feeling. The moment you ask "okay, do I actually want this thing reachable from a coffee shop in Frankfurt", and your honest answer is no. Three services on this box answered no. So the tunnel had two real hostnames plus a catch-all, and that was it.
+
+## Setting up the tunnel itself
+
+The setup was honestly easier than I expected. A handful of commands and one YAML file, and that was it.
+
+```bash
+brew install cloudflared
+
+# Sign in to Cloudflare (opens a browser to authorize the account)
+cloudflared tunnel login
+
+# Create the tunnel itself, which also drops a credentials JSON in ~/.cloudflared/
+cloudflared tunnel create vinelabs-mini
+
+# Wire up DNS for each public hostname (creates a proxied CNAME)
+cloudflared tunnel route dns vinelabs-mini home.vinelabs.de
+cloudflared tunnel route dns vinelabs-mini status.vinelabs.de
+
+# Run it
+cloudflared --config ~/.cloudflared/config.yml tunnel run vinelabs-mini
+```
+
+The `tunnel route dns` command is worth flagging. It calls Cloudflare's API directly, creates the proxied CNAME pointing at your tunnel, and is idempotent. If the CNAME already exists pointing at the same tunnel, it leaves it alone. If it exists pointing somewhere else, it tells you, instead of silently overwriting. So you never need to touch the DNS dashboard for the happy path. Worth committing to muscle memory early, it saves headaches down the line.
+
+For persistence I wrote a tiny launchd plist so cloudflared starts at boot and comes back up if it ever crashes. Nothing fancy in it, just `RunAtLoad` and `KeepAlive` and the daemon sorts itself out.
+
+## The config.yml that runs the tunnel
+
+The file that actually defines what the tunnel does lives at `~/.cloudflared/config.yml`. Here is what mine ended up looking like.
+
+```yaml
+tunnel: fd121612-83bd-4eb0-9c1b-cd43160bf89b
+credentials-file: /Users/vineeth/.cloudflared/fd121612-83bd-4eb0-9c1b-cd43160bf89b.json
+
+ingress:
+  - hostname: home.vinelabs.de
+    service: http://localhost:80
+
+  - hostname: status.vinelabs.de
+    service: http://localhost:3001
+
+  # Catch-all (required)
+  - service: http_status:404
+```
+
+Three things worth calling out for anyone new to cloudflared config files.
+
+**The tunnel ID and credentials file at the top** are how cloudflared knows which tunnel it is and which credentials to use when it phones home to Cloudflare. You get both from `cloudflared tunnel create`.
+
+**Each ingress rule has a hostname and a service.** The hostname is the public name a request comes in on. The service is where cloudflared should forward that request locally. `http://localhost:3001` is Uptime Kuma running on the Mac mini. Plain HTTP is fine here, because the connection is from cloudflared to a service on the same box, never over the wire.
+
+**The last rule has no hostname.** That is the catch-all, and it is required. cloudflared will refuse to start without one. If a request comes in for a hostname that does not match any earlier rule, this is where it lands. I use `http_status:404`, because that is the truthful answer for an unknown hostname. The point is, you need a fallback. Without it, the daemon does not run.
+
+That is the whole tunnel config. Two public hostnames, one catch-all, twelve lines of YAML. Less than I expected when I started.
+
+## Watching it actually work
+
+Once cloudflared was up and the DNS records were in place, I hit `https://status.vinelabs.de` from my laptop, off Tailscale, on a regular consumer connection. Got the redirect to Uptime Kuma's dashboard, served via Cloudflare. Exactly the response I was hoping for.
+
+![Terminal output showing curl -sSI against status.vinelabs.de returning HTTP/2 302 with location /dashboard, served via Cloudflare.](/blog/cloudflare-tunnel-status-live.png)
+
+Real cert, real public URL, real public internet, and not a single port forwarded on my router. The Mac mini just kept doing its thing. Cloudflare did the rest.
+
+`home.vinelabs.de` came up the same way. Two for two.
+
+## Where to from here
+
+The bones are in place. What I want to add on top, roughly in this order.
+
+First, a small phone shortcut that POSTs to the agent webhook through its own tunnel, fronted by Cloudflare Access so only my own Google account can hit it. Then the n8n flows will start consuming `status.vinelabs.de` as their uptime source, instead of polling each container directly. And somewhere down the line, a real landing page on `home.vinelabs.de` that lists the projects living under the [vinelabs-de](/blog/how-i-ended-up-buying-vinelabs-de) org, instead of the placeholder it has right now.
+
+The domain finally has a job. The Mac mini finally has a face. The two of them are talking through a quiet outbound connection that my router never even noticed.
+
+Okay, that is enough from me for today. If any of this saved you the evening of router-port-forwarding pain I used to do, that is the whole point of writing it down. Until the next one, take it easy.
