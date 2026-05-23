@@ -1,0 +1,104 @@
+---
+title: "the slow request my APM never told me about"
+description: "A user was hitting six-minute page loads and my APM had nothing on it. Turns out APMs cap trace duration. Here is what I reached for instead."
+pubDate: 2026-05-23
+tags: ["debugging", "profiling", "apm", "production", "php"]
+draft: false
+heroImage: "/blog/apm-blind-spot-hero.png"
+---
+
+# the slow request my APM never told me about
+
+![A developer holding a flashlight pointed at one glowing server box in a row of dark ones, revealing a busy worker process inside, flat editorial illustration, soft blue and warm amber palette, clean minimal design.](/blog/apm-blind-spot-hero.png)
+
+**TL;DR**: one specific user was loading a page in six minutes while everyone else loaded it in under a second. The APM dashboard had nothing on it. Turns out APMs drop requests that run too long, so the worst requests on your system are exactly the ones the dashboard cannot see. I learned to attach a sampling profiler to the live worker and read its stack directly. Different tool, different rules. Saved my week.
+
+## the part where the dashboard goes quiet
+
+So there I was, staring at the APM dashboard, watching it lie to me by omission.
+
+One user was reporting a six-minute page load. I could reproduce it. I could see it in the browser network panel. I could SSH into the box and watch one worker peg a CPU for the full duration. The thing was happening, on the box I was logged into, while I was watching.
+
+And the APM had nothing. No trace. No slow query. No outlier transaction. Just the same boring p95 numbers I had been looking at for weeks.
+
+For the longest time I assumed I was holding the APM wrong. Surely there is a filter, a date range, a sample rate dial I am missing. Surely the slowest request on the entire system is not the one piece of data we cannot pull up.
+
+Turns out, kind of, yes.
+
+## why APMs cannot see your worst request
+
+Most APMs work by hooking every function entry and exit in your runtime. The agent collects the data, buffers it, then uploads a full trace to the dashboard at the end of the request. This is wonderful when it works, because you get exact per-function timings. But it has two limits that matter the moment things get really bad.
+
+One, the agent has to sub-sample. If you traced every request, the overhead would eat your servers. So most APMs trace some percentage of requests and aggregate the rest into thin metrics. On the box I was debugging, the sample rate was 25 percent. One in four. Even with no other problem, a single user would need to click four times on average before one of their requests got fully captured. They had clicked many more times than that. Still nothing.
+
+Two, there is a hard cap on trace duration. Past some threshold (about five minutes on the APM I was using, possibly configurable, possibly not, I never got a confident answer), the trace is dropped during upload. The reason is sensible. A six-hour PHP request would generate a trace the size of a small novel and the upload pipeline would buckle. So the APM protects itself.
+
+But here is the cruel irony you only notice once you are in this situation. The slower a single request is, the less likely your APM is to tell you why. Slow requests are exactly the ones that get dropped. Slow requests are exactly the ones you most need a trace for. The dashboard cannot help you with the problem that needs help the most.
+
+Happened to you too, right? You go looking for the worst request in the system and the tool that was supposed to find it for you just shrugs.
+
+## what a sampling profiler does differently
+
+This is the bit where someone smarter than me says "just use a sampling profiler". I had heard about them before. I had never actually reached for one. So I went and read what they do.
+
+A sampling profiler is not the same shape as an APM. It does not instrument anything. It does not hook function entries. It does not even know about HTTP requests. What it does is sit outside your runtime, attach via the same syscall a debugger uses (`ptrace` on Linux), and read the worker's memory directly. Specifically, it walks the language VM's call stack from `/proc/PID/mem` at whatever rate you ask for. Ninety nine snapshots a second is a comfortable default.
+
+That is it. That is the whole tool. A loop that goes "read stack, write to file, sleep, repeat".
+
+The implications are what surprised me. Because it never hooks anything, there is zero overhead on requests you are not sampling. Because it does not buffer a trace, it does not care how long the request takes. A six-hour request, a six-minute request, a six-millisecond request, it all looks the same to the sampler. Read stack. Write to file. Sleep.
+
+For PHP this tool is called phpspy. I built it from source on the box, picked the worker that was clearly burning CPU on the bad request, attached the sampler for a minute, and pulled the output back.
+
+## the wrong turn I have to tell you about
+
+This is the part where I make myself look bad, but the lesson is worth the embarrassment.
+
+My first aggregation came back saying "ninety seven percent of samples contain function X in the stack". X was a middleware that runs on every request. I read this as "X is the bottleneck", wrote a fix for X, deployed it, measured, and the request was still six minutes.
+
+I felt stupid for a beat. Then I felt stupider when I went back and actually read the data.
+
+Of course ninety seven percent of samples contained X in their stack. Middleware runs on every single request. It appears in one hundred percent of samples by definition. The "ninety seven" was only "not one hundred" because the worker was sometimes between requests. I had aggregated by "does this function appear anywhere in the stack" and treated that as a signal. It was not a signal. It was a property of how requests are built.
+
+The actual signal in a sampling profiler is the leaf of each stack. That is, the function the worker is currently executing at the moment you sampled it. Not "anywhere in the stack". The very bottom. The leaf aggregation had already been telling me the truth in the same output. I just had not read it. Function X was at the top of the call chain; the actual hot code was six frames deeper, sitting at the leaf, plain as day, in the same dump I had been staring at.
+
+Tell me I am not the only one who has done this. You get a dataset, you skim it, you grab the biggest number, you start typing. The biggest number was not the right number. Slow down and read the rest.
+
+## the right shape, after the dust settled
+
+Re-ran the sampler. Aggregated by leaf this time. Sliced one more time at a mid-stack depth to see what was calling that leaf, because sometimes the same leaf gets reached from very different parents and you need to know the parent to understand the fix.
+
+Within minutes the picture was unambiguous. Specific function. Specific loop. Specific reason it was running ten thousand times for that one user and twice for everyone else. From there it was just engineering.
+
+The whole thing, beginning to end, took less than half a day once I had the right data. The two days before that, where I was poking at the APM and writing fixes for the wrong layer, those were the expensive days. Not the debugging itself.
+
+## the bigger thing I learned about my tools
+
+After it was done I sat with the question for a bit, because I do not love being surprised by my own tooling.
+
+The reframe was that APMs and sampling profilers are not the same tool with different names on them. They are different shapes for different problems.
+
+The APM is for "across thousands of requests over weeks, where am I generally slow". It is for the aggregated view. It has to sub-sample. It has to cap trace size. It is wonderful at telling you that your checkout endpoint has a creeping p95. It is bad at telling you why one specific request you can reproduce right now is six minutes long. Those are different jobs.
+
+The sampling profiler is for "this one process is doing something I do not understand, right now, while I am watching". It does not know about requests. It does not aggregate over weeks. But it does not care about duration, sample rate, trace size, or any of the other constraints the APM has to respect. It will happily sit next to a runaway worker for an hour and tell you exactly which line of code is on fire.
+
+You need both. You reach for them at different moments. The hard part is noticing which moment you are in, because by default we all reach for the dashboard, because the dashboard is what we are used to.
+
+## so what does this look like outside PHP
+
+The shape is general. Most runtimes have a sampling profiler that nobody tells you about until you are in trouble.
+
+- Node has `node --inspect` plus Chrome DevTools for live attaching, and the broader Linux ecosystem has eBPF-based profilers like Pyroscope and Parca that work on any process.
+- Python has `py-spy`, which is basically the same idea as phpspy, written for the Python VM. Same trick. Same syscall. Different language.
+- The JVM has async-profiler and a dozen other things, mostly because the JVM crowd has been doing this for longer than the rest of us.
+
+The point is not the specific tool. The point is to know it exists in your stack before you need it. Knowing about py-spy when your Python app is stuck is the difference between a four-hour incident and a four-day one.
+
+## what I now do differently
+
+Two things changed in how I work after this.
+
+First, when the APM says nothing, I do not assume the problem is small. I assume the APM cannot see it. There is a difference. The first reaction makes you close the ticket. The second one makes you reach for the right tool.
+
+Second, before I write any fix off the back of profiler data, I check what I am aggregating by. Leaf function. Caller of leaf. Time spent inside, not "appears anywhere". The shape of the question decides the shape of the answer, and if you ask the wrong shape you will get a confident answer that is also wrong.
+
+Not going to pretend this was a perfect writeup. But if even one part of it helped someone avoid the headache I went through, then it was worth putting down. See you in the next one.
