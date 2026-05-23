@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.47](https://github.com/vineethkrishnan/portfolio/compare/v0.0.46...v0.0.47) (2026-05-23)
+
+
+### Features
+
+* **blog:** publish the slow request my apm never told me about ([4c95eae](https://github.com/vineethkrishnan/portfolio/commit/4c95eae2ba65394173c1ae119f240940509da8b7))
+
 ## [0.0.46](https://github.com/vineethkrishnan/portfolio/compare/v0.0.45...v0.0.46) (2026-05-20)
 
 
