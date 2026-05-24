@@ -1,0 +1,132 @@
+---
+title: "Building vaultctl: the password vault where my own server can't read your passwords"
+description: "A self-hosted, zero-knowledge password vault. One Go binary, three clients, one constraint that quietly shaped every other decision in the codebase."
+pubDate: 2026-05-24
+tags: ["go", "cryptography", "zero-knowledge", "self-hosting", "open-source", "journey"]
+draft: false
+heroImage: "/blog/vaultctl-hero.png"
+---
+
+# Building vaultctl: the password vault where my own server can't read your passwords
+
+![A glowing safe inside a server rack with a small key floating above it, a faded developer silhouette in the background, flat illustration in cool blue and teal tones.](/blog/vaultctl-hero.png)
+
+Every password manager forces the same uncomfortable question: *do I trust this server with my actual passwords?*
+
+For most vaults, cloud or self-hosted, the honest answer is "yes, you have to". The server holds the keys. It can decrypt your data. Cloud just makes it worse because the server is not even yours.
+
+**vaultctl** is what I built when I stopped wanting to make that trade. Self-hosted password vault, but the server has no code path to decrypt anything. Encryption happens in the browser, the extension, or the CLI, before the bytes ever leave the client. If someone walks off with the database tomorrow, what they get is noise.
+
+This is another post in the series where I walk through my open-source projects. Earlier ones covered [backupctl](/blog/building-backupctl), [agent-sessions](/blog/building-agent-sessions), and [mcp-pool](/blog/building-mcp-pool).
+
+## How I got here
+
+I gave LastPass a real try in the early days, only with throwaway logins. Good thing too, because a long year ago [LastPass got breached](https://blog.lastpass.com/posts/notice-of-recent-security-incident). Nothing of mine was in it, but the message was loud enough. If the biggest name in cloud SaaS could leak vaults, the whole category had a trust problem I was not willing to live with. Your vault is sitting on somebody else's server. The day it gets breached you find out the same time everyone on Twitter does.
+
+So I went self-hosted, and the whole picture changed. No third-party operator to be breached, no support team to be socially engineered, no vendor that gets acquired and changes its terms next quarter. The blast radius shrinks to "my one server, in my own house". Self-hosted is the safer category. Full stop.
+
+But self-hosted is a spectrum. Closed-source self-hosted vaults are a non-starter for me, because a password is the most sensitive thing on my machine, and if I cannot read the binary that touches it, I cannot tell what it does with the master password in memory, whether it phones home for "telemetry", or what the next update is going to change without telling me. For most software, closed-source self-hosted is fine. For something that holds your passwords, credentials, API keys, SSH keys, recovery phrases, and whatever other secrets you put in it, it is not. A vault these days is a lot more than just passwords.
+
+So I went open-source self-hosted, and that was much better. I could read the code, pin the version, trust the boundary. But every time I looked at the schema, one detail kept bothering me. The server is sitting on the keys that decrypt my stuff. Self-hosting protects me from somebody else's incident. It does not protect me from my own.
+
+That was the missing piece. A vault where even my own server cannot read the data. If I was going to be the one trusting it, I might as well be the one making the calls.
+
+That is the itch that became vaultctl. Still self-hosted. Still open-source. Just with one extra property bolted in at the bottom: the server itself, even mine, cannot read your data. Ever.
+
+## Why build it when Vaultwarden exists
+
+Fair question. Vaultwarden is excellent and gets most of the way there. But it is a re-implementation of someone else's server protocol, which means the day I want to change how sharing works, or what the rekey path looks like, or whether a particular field is even allowed to hit the server, I am a guest in someone else's house. I either patch upstream or maintain a fork. vaultctl is what I built when I wanted to be the host of my own design instead.
+
+What vaultctl gives me that I could not get off the shelf:
+
+- **No `decrypt(...)` function on the server. Not by policy, by absence.** Grep the source. The keys to decrypt user data do not live on the server side of the wire. Pop the server, leak ciphertext.
+- **Member-removal does a full vault rekey.** When you remove someone from a shared vault, every item gets re-encrypted under a fresh key. Anything they kept a copy of is no longer good for new data.
+- **Ed25519 signature pinning on every public key.** Even if my server is compromised and tries to hand a client an attacker-controlled public key during a re-wrap, the client refuses because the signature does not check out.
+- **One Go binary, three clients.** Web SPA, CLI, MV3 browser extension. All non-privileged, all hitting the same JSON API, all sharing the same crypto module. No client is treated special, no "admin" endpoint exists.
+- **One-file install.** The React SPA and the SQL migrations are embedded into the Go binary. `docker compose up -d`, `migrate up`, you are running on a ~45 MB image. No init containers, no nginx in front, no "remember to copy the static folder".
+- **Verifiable releases.** Cosign signatures, CycloneDX SBOMs, SLSA-L3 provenance attestations on public releases. For something you put your credentials into, this is the bare minimum.
+
+The shorter version: I had opinions about how a vault should behave that I could not get on someone else's roadmap. Building it myself was the cheaper move.
+
+## The design bet: a constraint, not a feature
+
+Zero-knowledge is not a feature you add. It is a constraint you accept, and then it quietly forbids a lot of code you would otherwise write.
+
+The first time I felt this was when I sat down to design the "forgot password" flow. Of course there should be one. Every app has one. About thirty seconds in, the whole thing collapsed in my head. If the server can reset your password without your master password, then the server can derive the keys that decrypt your data. Which means the server *can* decrypt your data. The whole premise becomes a lie.
+
+So there is no forgot password flow. There is a Recovery Kit, shown once at registration. If you lose both that and your master password, the data is gone. Not "gone until support". Gone.
+
+Once I accepted that, the rest of the questions answered themselves. No server-side search on titles, the server does not know the titles. No "admin can see what is in here" rescue path, if the admin can rescue, the admin can read. No "store this as plaintext just for now" anywhere in the codebase.
+
+The other big bet was Go. Honest reason: I write a lot more Go than Rust, and side projects that need me to re-learn the language between sessions do not get shipped. The technical reasons (single static binary, stdlib crypto, easy to read) helped, but they were not the deciding ones.
+
+## What it actually does
+
+Self-host with `docker compose up -d`. One Caddy in front of one vaultctl container in front of one Postgres. The vaultctl image is ~45 MB on a distroless base. The React SPA is built once and embedded into the Go binary with `//go:embed`. SQL migrations are embedded too. The whole product ships as one file.
+
+Register the first user, save your Recovery Kit, you are in. The browser derives your master key with Argon2id, then derives an auth hash to prove who you are to the server and a separate key to encrypt your data. The master password never leaves the browser. The server stores the auth hash, the salt, and a pile of ciphertext blobs.
+
+Add a login and the client encrypts the title, URL, username, and password with the vault's symmetric key using AES-256-GCM. The server stores the ciphertext. Done.
+
+Same flow from the CLI:
+
+```bash
+export VAULTCTL_API_URL=https://vault.example.com
+vaultctl login
+vaultctl add login --name Reddit
+vaultctl get Reddit
+```
+
+Same from the browser extension. Same from the SPA. None of the three clients is privileged. They share the crypto primitives, hit the same JSON API, and the server treats them identically.
+
+## The hard parts
+
+### Actually enforcing "the server cannot decrypt"
+
+Anyone can write a README saying "encryption happens client-side". The interesting question is whether you can prove it. The way I enforce it is structural. There is no `decrypt(ciphertext, key)` function anywhere in the Go codebase. None. Grep for `aes.NewCipher` or `Open(` and you will not find one that touches user data. The keys to decrypt do not exist on the server side of the wire.
+
+The thing that bit me was the audit log. First version happily wrote "user X added item Y to vault Z, named GitHub root token" in plain English, sitting in a Postgres column. I opened the table in psql to admire my work and just sat there going, oh no. I had built a system whose whole pitch was "the server cannot read your data", and built right next to it a log that recorded *exactly* what was in your data in cleartext.
+
+Rewrote it the same evening. Audit messages are templated client-side, the rendered string is encrypted before it goes in.
+
+Zero-knowledge is a property of the entire pipeline, not a feature of the encrypt button.
+
+### The member-removal rekey, and the Ed25519 pin
+
+A team vault has a symmetric key. Every member has that key wrapped with their RSA public key. When I share with you, I unwrap my copy, re-wrap with your public key, and the server stores the new wrap.
+
+Now I remove you. Naive answer: delete your wrapped copy. Done.
+
+No. You already had the key. You used the vault. Nothing stops you from caching the unwrapped symmetric key on your machine. Deleting your wrap does not unlearn bytes. If you kept a copy, you can decrypt every item in that vault forever.
+
+The only real answer is a rekey. Every remaining member's client re-encrypts every item with a fresh symmetric key, then re-wraps that new key for each remaining member. A coordination nightmare in a transactional unit. I burned a lot of time getting batching and idempotency right.
+
+But the real surprise was quieter. When you re-wrap for another member, you fetch their public key from the server. Which means the server gets to tell you which public key belongs to that user. If the server is malicious or compromised, it can hand you a key it controls instead of the real one. You happily wrap the new vault key for "Alice", and what you actually did is hand the server the keys to the vault.
+
+The fix is signature pinning. Every user has a second keypair, an Ed25519 identity key, generated at registration. They sign their RSA public key with it. When another client fetches that public key, it also fetches the signature and verifies it against the identity public key on file. No valid signature, no wrap.
+
+The trust shifts from "the server told me this is Alice's public key" to "Alice told me this is Alice's public key, at registration time, mathematically attached to the bytes." The day I got that flow right end-to-end was the day vaultctl stopped being a single-user toy.
+
+### One Go binary, three clients
+
+I wanted three clients sharing one server and one set of crypto primitives, with one binary to deploy.
+
+`cmd/server/` is the entry point and does everything. `vaultctl server` runs the API. `vaultctl migrate up` applies the embedded SQL migrations. `vaultctl login` / `add` / `get` / `ls` are the CLI. One binary, multiple subcommands, dispatched through Cobra. The CLI is just another HTTP client hitting the same JSON API the SPA uses. No privileged "internal" endpoints.
+
+The SPA is where `embed` earned its keep. `make web-build` runs `vite build` into `web/dist/`. A small Go file does `//go:embed dist/*` and folds it into the binary at compile time. The HTTP handler serves the SPA from the embedded filesystem. No second container, no nginx fronting a static folder.
+
+The browser extension is the only piece outside the Go binary, because it has to ship through the Chrome and Firefox stores. But it uses the same JSON API and the same crypto primitives the SPA does, through a shared TypeScript module both `web/` and `extension/` import.
+
+Fresh install: `docker compose up -d`, `migrate up`, done. No build steps on the target. No init scripts. For something whose whole job is to be the most boring piece of infrastructure in your life, that simplicity is the point.
+
+## Where to go from here
+
+If any of this is useful, the whole thing is open source:
+
+- **Code:** [github.com/vineethkrishnan/vaultctl](https://github.com/vineethkrishnan/vaultctl)
+- **Docs:** [vaultctl.vinelabs.de](https://vaultctl.vinelabs.de)
+- **License:** AGPL-3.0
+
+I would genuinely like to be wrong about something here before someone trusts it with their AWS root key. If you read the code and find a hole, please open an issue.
+
+So that is where I will stop. If you have a different way of doing this, I genuinely want to hear it. Drop me a note.
