@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.48](https://github.com/vineethkrishnan/portfolio/compare/v0.0.47...v0.0.48) (2026-05-24)
+
+
+### Features
+
+* **blog:** building vaultctl post ([#100](https://github.com/vineethkrishnan/portfolio/issues/100)) ([23e3aa1](https://github.com/vineethkrishnan/portfolio/commit/23e3aa17ad94c20a29b6ea62971224d01cc600fc))
+
 ## [0.0.47](https://github.com/vineethkrishnan/portfolio/compare/v0.0.46...v0.0.47) (2026-05-23)
 
 
