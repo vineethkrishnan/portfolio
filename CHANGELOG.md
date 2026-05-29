@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.50](https://github.com/vineethkrishnan/portfolio/compare/v0.0.49...v0.0.50) (2026-05-29)
+
+
+### Features
+
+* **blog:** add command-palette search modal with hotkeys ([#104](https://github.com/vineethkrishnan/portfolio/issues/104)) ([d049754](https://github.com/vineethkrishnan/portfolio/commit/d04975457ea722ab72da4c2a817513cf9e518387))
+
 ## [0.0.49](https://github.com/vineethkrishnan/portfolio/compare/v0.0.48...v0.0.49) (2026-05-29)
 
 
