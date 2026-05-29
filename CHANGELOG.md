@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.49](https://github.com/vineethkrishnan/portfolio/compare/v0.0.48...v0.0.49) (2026-05-29)
+
+
+### Features
+
+* **main:** update title to senior full stack engineer ([#102](https://github.com/vineethkrishnan/portfolio/issues/102)) ([105be50](https://github.com/vineethkrishnan/portfolio/commit/105be5093c516c3dfa37a4a9d195b5a3be8cd39d))
+
 ## [0.0.48](https://github.com/vineethkrishnan/portfolio/compare/v0.0.47...v0.0.48) (2026-05-24)
 
 
