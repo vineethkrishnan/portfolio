@@ -65,7 +65,7 @@ test.describe("Theme Switcher", () => {
 
     const badge = page.locator(".non-terminal-only");
     await expect(badge).toBeVisible();
-    await expect(badge).toContainText("Full Stack Developer");
+    await expect(badge).toContainText("Senior Full Stack Engineer");
 
     const prompt = page.locator(".terminal-only");
     await expect(prompt).not.toBeVisible();
