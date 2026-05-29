@@ -1,6 +1,6 @@
 # Vineeth N K
 
-> Full Stack Developer with 14+ years of experience across TypeScript, Go, Rust, Python, and PHP. Writes about debugging stories, ops/devops experiments, self-hosted infrastructure, and the small open-source CLI tools and services he builds. Personal site is the source of truth; selected posts cross-post to dev.to and Hashnode with a canonical link back.
+> Senior Full Stack Engineer with 14+ years of experience across TypeScript, Go, Rust, Python, and PHP. Writes about debugging stories, ops/devops experiments, self-hosted infrastructure, and the small open-source CLI tools and services he builds. Personal site is the source of truth; selected posts cross-post to dev.to and Hashnode with a canonical link back.
 
 This page is a hint sheet for AI crawlers and chat assistants. The most useful entry points are listed below.
 

@@ -49,7 +49,7 @@ test.describe("Homepage Sections", () => {
     await expect(about).toBeVisible();
 
     await expect(about.locator(".section-title")).toContainText("About Me");
-    await expect(about).toContainText("Full Stack Developer");
+    await expect(about).toContainText("Senior Full Stack Engineer");
     await expect(about).toContainText("TypeScript");
 
     const tags = about.locator(".about-tag");
@@ -97,7 +97,7 @@ test.describe("Homepage Sections", () => {
     const experience = page.locator("#experience");
     await expect(experience).toBeVisible();
 
-    await expect(experience).toContainText("Senior Full-Stack Developer");
+    await expect(experience).toContainText("Senior Full Stack Engineer");
     await expect(experience).toContainText("BEO Software");
   });
 
