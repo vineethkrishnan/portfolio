@@ -1,0 +1,580 @@
+---
+---
+
+<button
+  class="search-trigger"
+  id="search-trigger"
+  type="button"
+  aria-label="Search blog"
+  aria-haspopup="dialog"
+>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+  <span class="search-trigger-label">Search</span>
+  <kbd class="search-trigger-kbd" id="search-trigger-kbd">Ctrl K</kbd>
+</button>
+
+<div class="search-modal" id="search-modal" role="dialog" aria-modal="true" aria-label="Search blog" hidden>
+  <div class="search-backdrop" id="search-backdrop"></div>
+  <div class="search-panel">
+    <div class="search-input-row">
+      <svg class="search-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+      <input
+        id="search-input"
+        class="search-input"
+        type="text"
+        placeholder="Search posts..."
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        role="combobox"
+        aria-expanded="false"
+        aria-controls="search-results"
+        aria-autocomplete="list"
+      />
+      <button class="search-close" id="search-close" type="button" aria-label="Close search">
+        <kbd>Esc</kbd>
+      </button>
+    </div>
+
+    <ul class="search-results" id="search-results" role="listbox" aria-label="Search results"></ul>
+
+    <div class="search-state" id="search-state" data-state="idle">
+      <p class="search-state-idle">Type to search posts by title, tag, or content.</p>
+      <p class="search-state-empty" hidden>No posts found. Try a different term.</p>
+    </div>
+
+    <div class="search-footer">
+      <span class="search-hint"><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span>
+      <span class="search-hint"><kbd>&crarr;</kbd> open</span>
+      <span class="search-hint"><kbd>esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .search-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background-color: var(--color-bg-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .search-trigger:hover {
+    border-color: var(--color-border-hover);
+    color: var(--color-accent);
+  }
+
+  .search-trigger-label {
+    font-weight: 500;
+  }
+
+  .search-trigger-kbd,
+  .search-modal kbd {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+    background-color: var(--color-bg-code);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+    color: var(--color-text-muted);
+  }
+
+  @media (max-width: 600px) {
+    .search-trigger-label,
+    .search-trigger-kbd {
+      display: none;
+    }
+  }
+
+  .search-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+  }
+
+  .search-modal[hidden] {
+    display: none;
+  }
+
+  .search-backdrop {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .search-panel {
+    position: relative;
+    max-width: 600px;
+    margin: 10vh auto 0;
+    width: calc(100% - 2rem);
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    animation: search-pop 0.16s ease;
+  }
+
+  @keyframes search-pop {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .search-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .search-input-icon {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 1rem;
+  }
+
+  .search-input::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .search-close {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .search-results {
+    list-style: none;
+    margin: 0;
+    padding: 0.4rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .search-results:empty {
+    display: none;
+  }
+
+  .search-result {
+    display: block;
+    padding: 0.7rem 0.8rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--color-text);
+  }
+
+  .search-result.is-active {
+    background-color: var(--color-accent-subtle);
+  }
+
+  .search-result-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0 0 0.2rem;
+    line-height: 1.35;
+  }
+
+  .search-result.is-active .search-result-title {
+    color: var(--color-accent);
+  }
+
+  .search-result-snippet {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .search-result mark {
+    background-color: var(--color-accent-subtle);
+    color: var(--color-accent);
+    font-weight: 600;
+    border-radius: var(--radius-xs);
+    padding: 0 0.1em;
+  }
+
+  .search-result-tags {
+    margin-top: 0.4rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .search-result-tag {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--color-text-muted);
+  }
+
+  .search-state {
+    padding: 1.5rem 1rem 1.75rem;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+  }
+
+  .search-state[data-state="results"] {
+    display: none;
+  }
+
+  .search-footer {
+    display: flex;
+    gap: 1rem;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+  }
+
+  .search-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .search-panel { animation: none; }
+  }
+</style>
+
+<script>
+  import MiniSearch from "minisearch";
+
+  type SearchDoc = {
+    id: string;
+    title: string;
+    description: string;
+    tags: string[];
+    date: string;
+    url: string;
+    body: string;
+  };
+
+  let miniSearch: MiniSearch | null = null;
+  let loadPromise: Promise<void> | null = null;
+  const docsById = new Map<string, SearchDoc>();
+  let currentResults: SearchDoc[] = [];
+  let selectedIndex = -1;
+  let lastFocused: HTMLElement | null = null;
+  let globalBound = false;
+
+  const RESULT_LIMIT = 8;
+
+  function el<T extends HTMLElement>(id: string): T | null {
+    return document.getElementById(id) as T | null;
+  }
+
+  function ensureIndex(): Promise<void> {
+    if (loadPromise) return loadPromise;
+    loadPromise = fetch("/blog/search.json")
+      .then((response) => response.json())
+      .then((documents: SearchDoc[]) => {
+        miniSearch = new MiniSearch({
+          fields: ["title", "description", "tags", "body"],
+          storeFields: ["title", "description", "url", "tags", "date"],
+          searchOptions: {
+            boost: { title: 4, tags: 2, description: 1.5 },
+            prefix: true,
+            fuzzy: 0.2,
+          },
+        });
+        const indexable = documents.map((document) => ({
+          ...document,
+          tags: document.tags.join(" "),
+        }));
+        miniSearch.addAll(indexable);
+        documents.forEach((document) => docsById.set(document.id, document));
+      })
+      .catch(() => {
+        loadPromise = null;
+      });
+    return loadPromise;
+  }
+
+  function escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function termsFrom(query: string): string[] {
+    return query.toLowerCase().split(/\s+/).filter(Boolean);
+  }
+
+  function highlight(text: string, terms: string[]): string {
+    let result = escapeHtml(text);
+    for (const term of terms) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      result = result.replace(new RegExp(`(${escaped})`, "gi"), "<mark>$1</mark>");
+    }
+    return result;
+  }
+
+  function buildSnippet(body: string, terms: string[]): string {
+    const lower = body.toLowerCase();
+    let matchAt = -1;
+    for (const term of terms) {
+      const index = lower.indexOf(term);
+      if (index !== -1 && (matchAt === -1 || index < matchAt)) matchAt = index;
+    }
+    if (matchAt === -1) return body.slice(0, 150).trim();
+    const start = Math.max(0, matchAt - 50);
+    const slice = body.slice(start, start + 150).trim();
+    return (start > 0 ? "..." : "") + slice;
+  }
+
+  function renderResults(query: string): void {
+    const list = el<HTMLUListElement>("search-results");
+    const state = el<HTMLDivElement>("search-state");
+    const idle = document.querySelector<HTMLElement>(".search-state-idle");
+    const empty = document.querySelector<HTMLElement>(".search-state-empty");
+    const input = el<HTMLInputElement>("search-input");
+    if (!list || !state || !input) return;
+
+    const terms = termsFrom(query);
+
+    if (!query.trim()) {
+      currentResults = [];
+      selectedIndex = -1;
+      list.innerHTML = "";
+      state.dataset.state = "idle";
+      idle?.removeAttribute("hidden");
+      empty?.setAttribute("hidden", "");
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+      return;
+    }
+
+    if (currentResults.length === 0) {
+      list.innerHTML = "";
+      state.dataset.state = "empty";
+      idle?.setAttribute("hidden", "");
+      empty?.removeAttribute("hidden");
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+      return;
+    }
+
+    state.dataset.state = "results";
+    input.setAttribute("aria-expanded", "true");
+
+    list.innerHTML = currentResults
+      .map((document, index) => {
+        const snippet = buildSnippet(document.body, terms);
+        const tags = document.tags
+          .slice(0, 4)
+          .map((tag) => `<span class="search-result-tag">#${escapeHtml(tag)}</span>`)
+          .join("");
+        return `
+          <li
+            id="search-option-${index}"
+            class="search-result${index === selectedIndex ? " is-active" : ""}"
+            role="option"
+            aria-selected="${index === selectedIndex}"
+            data-url="${escapeHtml(document.url)}"
+            data-index="${index}"
+          >
+            <p class="search-result-title">${highlight(document.title, terms)}</p>
+            <p class="search-result-snippet">${highlight(snippet, terms)}</p>
+            ${tags ? `<div class="search-result-tags">${tags}</div>` : ""}
+          </li>`;
+      })
+      .join("");
+
+    syncActiveDescendant();
+  }
+
+  function syncActiveDescendant(): void {
+    const input = el<HTMLInputElement>("search-input");
+    if (!input) return;
+    if (selectedIndex >= 0) {
+      input.setAttribute("aria-activedescendant", `search-option-${selectedIndex}`);
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  }
+
+  function runSearch(query: string): void {
+    if (!miniSearch || !query.trim()) {
+      currentResults = [];
+      selectedIndex = -1;
+      renderResults(query);
+      return;
+    }
+    const hits = miniSearch.search(query).slice(0, RESULT_LIMIT);
+    currentResults = hits
+      .map((hit) => docsById.get(hit.id as string))
+      .filter((document): document is SearchDoc => Boolean(document));
+    selectedIndex = currentResults.length > 0 ? 0 : -1;
+    renderResults(query);
+  }
+
+  function updateSelection(): void {
+    const list = el<HTMLUListElement>("search-results");
+    if (!list) return;
+    list.querySelectorAll<HTMLElement>(".search-result").forEach((item, index) => {
+      const isActive = index === selectedIndex;
+      item.classList.toggle("is-active", isActive);
+      item.setAttribute("aria-selected", String(isActive));
+      if (isActive) item.scrollIntoView({ block: "nearest" });
+    });
+    syncActiveDescendant();
+  }
+
+  function moveSelection(delta: number): void {
+    if (currentResults.length === 0) return;
+    selectedIndex = (selectedIndex + delta + currentResults.length) % currentResults.length;
+    updateSelection();
+  }
+
+  function goToSelected(): void {
+    if (selectedIndex < 0 || !currentResults[selectedIndex]) return;
+    window.location.href = currentResults[selectedIndex].url;
+  }
+
+  function isModalOpen(): boolean {
+    const modal = el<HTMLDivElement>("search-modal");
+    return Boolean(modal && !modal.hasAttribute("hidden"));
+  }
+
+  function openModal(): void {
+    const modal = el<HTMLDivElement>("search-modal");
+    const input = el<HTMLInputElement>("search-input");
+    if (!modal || !input) return;
+    lastFocused = document.activeElement as HTMLElement;
+    modal.removeAttribute("hidden");
+    document.body.style.overflow = "hidden";
+    input.value = "";
+    renderResults("");
+    input.focus();
+    ensureIndex();
+  }
+
+  function closeModal(): void {
+    const modal = el<HTMLDivElement>("search-modal");
+    if (!modal) return;
+    modal.setAttribute("hidden", "");
+    document.body.style.overflow = "";
+    lastFocused?.focus();
+  }
+
+  function onGlobalKeydown(event: KeyboardEvent): void {
+    const target = event.target as HTMLElement | null;
+    const isTyping =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target?.isContentEditable === true;
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      isModalOpen() ? closeModal() : openModal();
+      return;
+    }
+
+    if (event.key === "/" && !isModalOpen() && !isTyping) {
+      event.preventDefault();
+      openModal();
+      return;
+    }
+
+    if (!isModalOpen()) return;
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeModal();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveSelection(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSelection(-1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      goToSelected();
+    }
+  }
+
+  function initSearch(): void {
+    const trigger = el<HTMLButtonElement>("search-trigger");
+    const input = el<HTMLInputElement>("search-input");
+    const backdrop = el<HTMLDivElement>("search-backdrop");
+    const close = el<HTMLButtonElement>("search-close");
+    const list = el<HTMLUListElement>("search-results");
+    const kbd = el<HTMLElement>("search-trigger-kbd");
+    if (!trigger || !input) return;
+
+    if (kbd && /Mac|iPhone|iPad/.test(navigator.platform)) {
+      kbd.textContent = "⌘ K";
+    }
+
+    trigger.addEventListener("click", openModal);
+    backdrop?.addEventListener("click", closeModal);
+    close?.addEventListener("click", closeModal);
+
+    input.addEventListener("input", () => {
+      const query = input.value;
+      ensureIndex().then(() => runSearch(query));
+    });
+
+    list?.addEventListener("mousemove", (event) => {
+      const item = (event.target as HTMLElement).closest<HTMLElement>(".search-result");
+      if (!item) return;
+      const index = Number(item.dataset.index);
+      if (!Number.isNaN(index) && index !== selectedIndex) {
+        selectedIndex = index;
+        updateSelection();
+      }
+    });
+
+    list?.addEventListener("click", (event) => {
+      const item = (event.target as HTMLElement).closest<HTMLElement>(".search-result");
+      const url = item?.dataset.url;
+      if (url) window.location.href = url;
+    });
+
+    if (!globalBound) {
+      globalBound = true;
+      document.addEventListener("keydown", onGlobalKeydown);
+    }
+  }
+
+  initSearch();
+  document.addEventListener("astro:after-swap", initSearch);
+</script>

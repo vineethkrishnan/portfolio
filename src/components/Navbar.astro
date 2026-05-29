@@ -1,5 +1,6 @@
 ---
 import ThemeSwitcher from "./ThemeSwitcher.astro";
+import Search from "./Search.astro";
 
 const navLinks = [
   { label: "About", href: "/#about" },
@@ -25,6 +26,7 @@ const navLinks = [
     </div>
 
     <div class="nav-right">
+      <Search />
       <ThemeSwitcher />
       <button class="mobile-toggle" id="mobile-toggle" aria-label="Toggle menu">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
