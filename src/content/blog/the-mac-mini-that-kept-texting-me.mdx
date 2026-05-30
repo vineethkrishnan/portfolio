@@ -1,0 +1,115 @@
+---
+title: "I went on a trip. My Mac mini stayed home and kept texting me."
+description: "I left town for a few days. The Mac mini stayed back, ran on its own, took orders from my phone, and pinged me about everything. This is what that felt like."
+pubDate: 2026-05-30
+tags: ["homelab", "mac-mini", "ntfy", "tailscale", "self-hosting"]
+draft: false
+heroImage: "/blog/the-mac-mini-that-kept-texting-me-hero.png"
+---
+
+# I went on a trip. My Mac mini stayed home and kept texting me.
+
+![A young South Asian man relaxing on a sunny hotel balcony looking at his phone, which glows with little notification bells, while a small Mac mini sits glowing back home inside a thought bubble with tiny green status icons floating around it, soft editorial illustration, warm pastel colors.](/blog/the-mac-mini-that-kept-texting-me-hero.png)
+
+> **TL;DR**: A while back I built a homelab on an old 2018 Mac mini. Then I went out of town for a few days and left it running. I half expected to come back to a dead box. Instead it just kept doing its job, let me SSH in from my phone and keep pushing my own CLI tools forward while away, and buzzed me whenever something mattered. Nothing dramatic happened. And honestly, that quiet was the whole point. This is the story of the homelab finally earning its keep while I was nowhere near it.
+
+## The part nobody tells you about building a homelab
+
+When you set up a homelab, all the blog posts stop at the setup. The screenshots are green, the containers are up, you take your victory lap and close the laptop.
+
+I did the same. I wrote down [the whole long evening of building this thing](/blog/mac-mini-homelab-setup), every gotcha, every GUI click macOS forced on me. At the end I had Vaultwarden, ntfy, Uptime Kuma, n8n, a little agent webhook, restic backups, all sitting on a Mac mini that a colleague handed me from his drawer.
+
+But here is the thing. A homelab that only works while you are sitting next to it is just a noisy space heater. The real test is the day you are not there. The day the power could flicker, a container could die, a backup could fail, and you would have no idea unless the box itself told you.
+
+So when a short trip came up, I did not shut anything down. I left it all running and went.
+
+## Day one, and the silence was loud
+
+First evening away, I caught myself doing the thing. You know the thing. Opening the phone to check if home is still alive, the way you check if you locked the front door.
+
+I pulled up the status page. Everything green. Uptime Kuma sitting there with a row of happy little dots, every service responding, the agent webhook answering its health check. Netdata showing the mini idling cool and bored.
+
+And then I just... put the phone down. There was nothing to do. The box did not need me.
+
+That feeling is strange the first time. You build a thing for months, you babysit it, and then one day it does not need babysitting anymore. Bittersweet, almost. Like dropping a kid at hostel.
+
+## The 3:30 buzz
+
+My restic backup runs every night at 03:30 in the morning, back home. Nobody is awake for that, which is the whole idea of a 3:30 AM cron. You set it for the dead of night precisely so it never gets in your way.
+
+The job fired while I was fast asleep, exactly like it does on any normal night. The only difference was that this night I was not home. I woke up the next morning, picked up the phone out of pure habit, and there it was waiting on the lock screen. ntfy notification. Backup done, snapshot pushed, a few MB in, almost nothing out after dedup.
+
+A tiny push telling me my data was safe, fired by a machine sitting alone in an empty flat, patiently waiting for me to wake up and read it. I did not do anything. I did not even open the app fully. I just saw it, nodded, and went to find coffee.
+
+That little buzz is the entire reason I wired ntfy in the first place. Not to spam me. To tell me the boring good news so that the day it becomes bad news, I notice immediately. A backup that runs silently is a backup you do not trust. A backup that texts you "done" every night is one you forget about, in the good way.
+
+If you have ever felt a small flush of pride at a green cron job, you and I would get along just fine.
+
+## The actual work happened from my phone
+
+Now the part I am quietly proud of.
+
+Here is what surprised me. The trip was not me firefighting a homelab from a hotel room. The box was calm the whole time. What I actually did was use the days to work on some cool side stuff and refine a few of my own personal CLI tools, straight from my phone.
+
+The trick is nothing fancy. Remote Login is on, the mini is on my tailnet, so I open an SSH app on my phone and I am in a real shell on the machine back home. Not a watered-down dashboard, the actual terminal, with my dotfiles, my aliases, my tools, all sitting exactly where I left them. From there I run whatever I want, `claude` included, and do real work.
+
+```bash
+# from the phone, over Tailscale
+ssh mac-mini
+# and then just... work, same as if I was at the desk
+```
+
+So the rhythm of my day became this. Find a quiet half hour, SSH in from the phone, run a command, kick off a change to one of my CLI tools, read the output right there on the small screen, run the next one. Tiny keyboard, yes, and I am not going to pretend a phone replaced my full setup. But for steadily nudging a few personal tools forward, command by command, it genuinely worked. I came home with actual progress, not just a tan.
+
+And yes, the homelab also has that agent webhook. But that one is built for a different job, automating the repetitive tasks from my daily work, where I fire a prompt and let the mini run it on its own and ping me the result. The trip work was the hands-on kind, just done through a very small keyboard.
+
+## Nothing went wrong, and that was the point
+
+Here is the anticlimax. The dashboard stayed green the entire time.
+
+No service fell over. No 3 AM page. No frantic debugging from a six-inch screen. Uptime Kuma just sat there with its happy row of dots, day after day, and the only buzzes I got were the friendly kind, backup done, agent result ready.
+
+And I want to be clear that the quiet is not a boring detail to skip past. The quiet is the product. The point of all the monitoring was never to give me a dramatic save story. It was so that if anything did go red, I would know within a heartbeat instead of finding out days later, back home, staring at a dead service with no idea how long it had been gone. I had recovery alerts wired alongside the down alerts too, so a blip would have buzzed me twice, once for the scare and once for the all-clear.
+
+It just never had to. And honestly, a homelab that gives you a boring trip is the homelab working exactly as designed.
+
+## The thing I was most nervous about
+
+Power.
+
+The one fear I could not fully shake was a power cut at home while I was away. If the mini went down and stayed down, my whole little world would go dark and there would be absolutely nothing I could do about it from out of town.
+
+So I had stacked two layers of insurance for exactly this.
+
+The first is a power backup. The mini sits behind a UPS that can keep it running on its own for a good six to eight hours. Most power cuts where I live are the short, annoying kind, gone and back before you finish complaining about them. The UPS swallows all of those without the mini ever noticing a thing.
+
+The second layer is for when a cut outlasts the battery, or when power drops and returns while I am away. Back during setup I had told macOS to bring itself back on its own.
+
+```bash
+sudo pmset -a autorestart 1   # come back on your own after a power cut
+sudo pmset -a sleep 0         # and never, ever go to sleep
+```
+
+`autorestart 1` means if power drops and later returns, the Mac boots itself without anyone pressing the button. Colima starts on boot through launchd, the containers come up with `restart: unless-stopped`, Tailscale reconnects on its own, and the whole stack reassembles itself like nothing happened.
+
+Between the two, the only way I genuinely lose is a power cut that runs longer than the battery and then never comes back for the rest of the trip. That is the real dark side, the one scenario where there is nothing left to do but wait until I am home. But it is a narrow window now, not the wide-open fear it used to be. And knowing that let me actually enjoy the trip instead of refreshing a status page every hour. A homelab you have to worry about is not a homelab, it is a pet that bites.
+
+## What this trip actually taught me
+
+I came back home, walked in, and the mini was sitting there with its little light on, exactly as I left it. No drama, no recovery saga, no horror story. It had just quietly done its job the entire time.
+
+And that is the lesson. The point of all that setup, all those gotchas and GUI clicks and one-word Caddy fixes, was not to have a pretty dashboard. It was to be able to leave, fully, and trust the thing to behave and to speak up only when it mattered.
+
+A few things made that trust possible, and if you are building your own, these are the ones that earned their place:
+
+- **ntfy for the boring good news, not just the bad.** Let it tell you the backup worked. The day it says the backup failed, you will already be in the habit of reading it.
+- **Tailscale so the box is in your pocket.** Everything reachable like it is on localhost, from anywhere, no ports open to the internet. That single choice is what makes the phone a real remote control.
+- **Uptime Kuma with recovery alerts on too.** Wire both the down and the all-clear, so the day something blips you get the relief buzz right after the scare, not just the scare.
+- **pmset autorestart for the power fear.** You cannot fix a dead box from another city. So make sure it un-deads itself.
+- **Plain SSH from the phone, over Tailscale.** This is the one that surprised me. A real shell on the home machine, my own tools and dotfiles, reachable from a phone anywhere. It turned dead travel time into actual progress, command by command.
+
+The homelab stopped being a project the day I could walk away from it. Funny how you only really finish building something when you stop having to look at it.
+
+So tell me, what is the one thing your setup does while you sleep that quietly makes you trust it? I am genuinely curious, because that small thing is usually the whole game.
+
+Right, I am off to check my phone for no reason again. Old habits. Take care of your machines, and they will take care of you back.
