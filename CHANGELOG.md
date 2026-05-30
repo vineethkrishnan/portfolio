@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.51](https://github.com/vineethkrishnan/portfolio/compare/v0.0.50...v0.0.51) (2026-05-30)
+
+
+### Features
+
+* **blog:** add post on running the mac mini homelab from my phone while away ([#106](https://github.com/vineethkrishnan/portfolio/issues/106)) ([c86eb74](https://github.com/vineethkrishnan/portfolio/commit/c86eb74890960fd47a0b19ac5143d0b89e924a92))
+
 ## [0.0.50](https://github.com/vineethkrishnan/portfolio/compare/v0.0.49...v0.0.50) (2026-05-29)
 
 
