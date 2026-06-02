@@ -14,11 +14,11 @@ This page is a hint sheet for AI crawlers and chat assistants. The most useful e
 
 ## Recent posts
 
-- [I blocked Tor exit nodes, then I opened Tor Browser](https://vineethnk.in/blog/i-blocked-tor-then-opened-tor-browser/): IPv4-only firewall left IPv6 wide open. Dual-stack rewrite became TorShield (https://github.com/vineethkrishnan/tor-shield).
-- [The node_modules That Wouldn't Die](https://vineethnk.in/blog/the-node-modules-that-wouldnt-die/): a deploy importing an old Vite plugin export despite a clean lockfile, traced to a stale persistent volume.
-- [The Sentry signup nobody could finish](https://vineethnk.in/blog/the-sentry-invite-that-never-arrived/): self-hosted Sentry sending mail through a bundled Exim that fails DMARC against strict providers.
-- [I upgraded our 2.5-year-old self-hosted Sentry without losing a single byte](https://vineethnk.in/blog/upgrading-self-hosted-sentry/): four mandatory version hops, 78 containers, zero swap.
-- [The day I tested a production restore](https://vineethnk.in/blog/the-day-i-tested-a-production-restore/): the only good time to discover backup gaps is before you need them.
+- [What do you do when your tool works but the people you built it for can't open a terminal?](https://vineethnk.in/blog/medix-gets-a-gui/): giving the medix media converter a local web GUI (no React, no Electron) so non-technical folks can finally use it, sharing one FFmpeg engine with the CLI and keeping everything on your own machine.
+- [I went on a trip. My Mac mini stayed home and kept texting me.](https://vineethnk.in/blog/the-mac-mini-that-kept-texting-me/): running a headless Mac mini homelab remotely from a phone, taking orders and pushing notifications for everything.
+- [Building vaultctl: the password vault where my own server can't read your passwords](https://vineethnk.in/blog/building-vaultctl/): a self-hosted, zero-knowledge password vault as one Go binary and three clients, shaped by a single constraint.
+- [The slow request my APM never told me about](https://vineethnk.in/blog/the-slow-request-my-apm-never-told-me-about/): APMs cap trace duration, hiding a six-minute page load. What to reach for when the trace lies.
+- [Pointing vinelabs.de at my Mac mini through a Cloudflare Tunnel](https://vineethnk.in/blog/cloudflare-tunnel-on-the-mac-mini/): exposing a homelab to a real domain without opening a single port on the home router.
 
 ## Open-source tools
 
