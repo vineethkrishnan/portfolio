@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.52](https://github.com/vineethkrishnan/portfolio/compare/v0.0.51...v0.0.52) (2026-06-02)
+
+
+### Features
+
+* **blog:** add post on giving medix a local web gui ([#108](https://github.com/vineethkrishnan/portfolio/issues/108)) ([9952355](https://github.com/vineethkrishnan/portfolio/commit/9952355340bbd3748635f44a1e3027e56aa58083))
+
 ## [0.0.51](https://github.com/vineethkrishnan/portfolio/compare/v0.0.50...v0.0.51) (2026-05-30)
 
 
