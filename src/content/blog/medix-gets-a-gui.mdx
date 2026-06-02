@@ -1,0 +1,130 @@
+---
+title: "What do you do when your tool works but the people you built it for can't open a terminal?"
+description: "Medix already converted media from the terminal. But the people I actually built it for don't open terminals. So I gave it a local web face, no React, no Electron, no node_modules."
+pubDate: 2026-06-02
+tags: ["python", "ffmpeg", "gui", "open-source", "self-hosted"]
+draft: false
+heroImage: "/blog/medix-gui-hero.png"
+---
+
+# What do you do when your tool works but the people you built it for can't open a terminal?
+
+![A clean local web app open in a browser on a Mac, showing media files being converted with live progress bars, warm desk light, the terminal sitting quietly in the background.](/blog/medix-gui-hero.png)
+
+## The part I quietly ignored for a while
+
+Medix did its job. It is a small Python CLI that wraps ffmpeg, and the first time it earned its keep was converting an old wedding video so my family could finally watch it. That story already has its own post, so I will not drag you through it again.
+
+But here is the thing I kept not saying out loud.
+
+I built medix for myself. To be clear about that. The family video was the spark, but the tool that came out of it was always mine to run. I never handed the CLI to anyone. I never expected to.
+
+Because when I say "just run `medix ./video.vob` and pick mp4", I am speaking a language that maybe three people in my family understand, and two of them are me on different days. Handing them a CLI would not be a gift, it would be homework. So I never did. The deal was simple: they bring me the file, I run the thing, they get the video.
+
+But somewhere along the way I started wondering what it would take to actually let them run it themselves. Not the terminal. Something they could open without me sitting next to them.
+
+A terminal, to most of my family, looks like the screen hackers use in movies right before something explodes.
+
+## I already had the hard part
+
+So one of those evenings where you start "looking" at your own project and end up rewriting it, a thought hit me. The actual hard work was already done.
+
+The file discovery, the ffprobe parsing, resolving output paths, running ffmpeg and reading its progress, all of that lives in the engine. The CLI is just a face on top of it. A nice face, sure, but still just a face.
+
+If the CLI is one face, why can't there be a second one?
+
+That became the rule for the whole thing: **one engine, two faces.** The GUI does not get its own clever conversion logic. It calls the exact same `discover_files`, the exact same `convert_file` the CLI calls. Same output, byte for byte. If I fix a bug in the engine, both faces get the fix. If the GUI did its own thing, I would be maintaining two tools that slowly drift apart and lie to each other. No thanks.
+
+Once you frame it like that, the GUI stops being a big scary project. It is just a web page that pokes the engine I already trust.
+
+## No React. No Electron. No node_modules black hole.
+
+Now, the obvious modern move here is to reach for a framework. Spin up React, maybe Electron so it feels like a "real app", bundle the whole thing.
+
+I looked at that path for a bit and walked away.
+
+This is a tool for converting a video on your own machine. It does not need a build step, a bundler, a state management library, and three hundred megabytes of `node_modules` so that someone's aunt can turn a .mov into an .mp4. The weight would be bigger than the thing it does.
+
+So the GUI is plain HTML, plain CSS, and plain JavaScript. Material Design styling, hand written, no toolkit. The server is Python's own `http.server`, the same standard library that ships with the language. Open the folder, read the files, done. If you clone medix, there is nothing extra to install for the GUI. It is just there.
+
+I am not saying frameworks are bad. I am saying not every nail needs the big hammer, and a local media converter is a very small nail.
+
+## The cursed file picker saga
+
+Here is where I lost more time than I will admit.
+
+A web page, for very good security reasons, cannot pop open your OS file browser and read a real path off your disk. The browser hands you a sandboxed file, not a path. But medix works on paths. It needs to know *where* your file actually lives so ffmpeg can read it and write the output next to it.
+
+I did not want to pull in tkinter or some GUI toolkit just to show one "choose a file" dialog. That felt like buying a truck to carry a single grocery bag.
+
+So the GUI shells out to whatever native dialog the operating system already has. On macOS that means asking AppleScript, of all things:
+
+```python
+# yes, we are literally asking osascript to open a file dialog for us
+script = f'POSIX path of ({chooser} with prompt "{prompt}")'
+return _run_picker(["osascript", "-e", script])
+```
+
+On Windows it spins up a PowerShell one-liner that summons a `System.Windows.Forms.OpenFileDialog`. On Linux it tries `zenity`, and if that is not around, `kdialog`. One feature. Three completely different shell-outs to three completely different worlds.
+
+And the honest part? It feels wrong. A web app reaching out through a subprocess to ask the operating system to draw a file dialog, then catching the path it prints back, is the kind of thing that makes you pause and go "surely there is a cleaner way." There probably is. But this one works on all three, needs zero extra dependencies, and the user just sees a normal file picker. Cursed, but it ships.
+
+Tell me I am not the only one who has shipped something that works perfectly while quietly feeling a little dirty about how.
+
+## The bit I actually wanted: watching it convert, live
+
+This was the real itch. In the CLI you get progress bars in the terminal, which I love. But I wanted that same live feeling in the browser. A bar per file, an overall bar, status moving from queued to encoding to done, all updating as ffmpeg chews through your media.
+
+For that the server streams progress to the page using Server-Sent Events. The browser opens one long-lived connection, and the server just keeps pushing little updates down it:
+
+```python
+# one open pipe, keep nudging the browser as each file moves along
+self.send_header("Content-Type", "text/event-stream")
+...
+self.wfile.write(b"data: " + payload + b"\n\n")
+```
+
+SSE is lovely when it works and quietly annoying when it does not, because a stream that silently stops looks exactly like a stream that is just being slow. I went back and forth getting the per-file callback to fire at the right moments and flush instead of sitting in a buffer. Once it clicked, though, watching those bars crawl across the browser in real time was the moment the GUI stopped feeling like a toy.
+
+## Making it something they never even have to start
+
+A GUI you launch from a terminal is still, technically, a terminal task. If my whole point is "non-technical people should be able to use this", then telling them to open a terminal and type `medix-gui` defeats the entire idea.
+
+So the GUI can run as a background daemon:
+
+```bash
+medix-gui start      # runs detached, prints the pid and port
+medix-gui status     # is it alive? what port?
+medix-gui stop       # done for the day
+```
+
+And on macOS it goes one step further with a launchd service. Install it once, and the GUI starts at login, restarts itself if it crashes, and survives reboots:
+
+```bash
+medix-gui install-service     # set it up once
+medix-gui uninstall-service   # change your mind later
+```
+
+The dream is simple. Someone non-technical opens their browser, the page is already there at a local address, they drag in a video, pick a format, watch the bars, done. They never see Python. They never see ffmpeg. They never know there was a daemon quietly waiting for them the whole time. That, to me, is the tool working the way the CLI worked for the wedding video, except now I am not the one who has to run it.
+
+## A local server is still a server
+
+One thing I did not want to get casual about: just because it runs on your own machine does not mean it gets to be careless.
+
+The whole privacy pitch of medix is that nothing leaves your computer. No upload, no login, no random server touching your files. A local web GUI could quietly undo all of that if I was sloppy. So it binds to `127.0.0.1` only, rejects requests with a Host header that is not localhost, blocks cross-origin POSTs, and only serves files from a fixed allowlist instead of whatever path someone asks for. Boring, defensive plumbing. But "it runs locally" and "it is safe" are not the same sentence, and I did not want to pretend they were.
+
+Your files stay yours. That was the point of the CLI, and it stays the point of the GUI.
+
+## The honest ending
+
+Here is the part I have to be straight about.
+
+Nobody non-technical has actually used it yet.
+
+I built the whole thing ahead of the moment. The daemon, the launchd service, the live bars, the cursed file pickers, all of it sitting ready for the next time someone hands me a weird file and a hopeful look. As of now, the main person who uses the medix GUI is the same guy who wrote it, which was not exactly the plan.
+
+But I am oddly fine with that. Some tools you build for a problem you have right now. This one I built for a problem I know is coming, because in my family it always comes back. There will be another old video, another wrong format, another "can you just put it somewhere we can all watch it." And when that day shows up, the face will already be there, waiting in a browser tab, no terminal required.
+
+If you want to poke at it, medix is on PyPI (`pip install medix`) and the source is at [github.com/vineethkrishnan/medix](https://github.com/vineethkrishnan/medix). The full docs, including a proper guide for the GUI, daemon, and the launchd bit, live at [medix.vinelabs.de](https://medix.vinelabs.de). The GUI itself is just `medix-gui` once it is installed.
+
+So yeah, that is my take on giving a CLI a second face. Yours might be completely different, and that is exactly what makes this whole space fun. Catch you in the next one, probably when something else I built for nobody finally finds its person.
