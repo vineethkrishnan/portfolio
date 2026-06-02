@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.53](https://github.com/vineethkrishnan/portfolio/compare/v0.0.52...v0.0.53) (2026-06-02)
+
+
+### CI/CD
+
+* **deploy:** pass PUBLIC_GISCUS_* vars into the production build ([#110](https://github.com/vineethkrishnan/portfolio/issues/110)) ([b63751f](https://github.com/vineethkrishnan/portfolio/commit/b63751f753a2308b6400c387f620bec4bdbe00c8))
+
 ## [0.0.52](https://github.com/vineethkrishnan/portfolio/compare/v0.0.51...v0.0.52) (2026-06-02)
 
 
