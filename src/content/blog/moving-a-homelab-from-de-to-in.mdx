@@ -1,7 +1,7 @@
 ---
 title: "moving a homelab from .de to .in without breaking the tunnel"
 description: "I moved my whole homelab from a .de domain to a .in one. The tunnel, the DNS, Vaultwarden, and one SQLite scare that nearly ate my status page. Here is how it went."
-pubDate: 2026-06-13
+pubDate: 2026-06-14
 tags: ["homelab", "cloudflare-tunnel", "dns", "self-hosting", "uptime-kuma"]
 draft: false
 heroImage: "/blog/moving-a-homelab-from-de-to-in-hero.png"
@@ -19,9 +19,9 @@ Let me start with the why, because the how only makes sense after that.
 
 For a good while my homelab lived on `vinelabs.de`. It was fine. Everything worked. The tunnel was up, the services were reachable, nobody was complaining (mostly because the only user is me). So why touch a working thing?
 
-If you have not seen the setup before, it is nothing exotic. One Mac mini at home runs the whole thing through Docker. A single Cloudflare tunnel fronts the handful of services I actually want reachable from the public internet: a landing page behind Caddy, my Vaultwarden, a small password tool I built called vaultctl, an Uptime Kuma status page, and a webhook endpoint for some ticket automation. Everything else, n8n and ntfy and the rest, stays inside my Tailscale tailnet where it belongs and never touches a public name at all. So when I say I moved the domain, I really mean that public edge, the five or so hostnames the tunnel answers for. Nothing internal had to change, which is half the reason the move stayed calm.
+If you have not seen the setup before, it is nothing exotic. One Mac mini at home runs the whole thing through Docker. A single Cloudflare tunnel fronts the handful of services I actually want reachable from the public internet: a landing page behind Caddy, my Vaultwarden, a small password tool I built called VaultCTL, an Uptime Kuma status page, and a webhook endpoint for some ticket automation. Everything else, n8n and ntfy and the rest, stays inside my Tailscale tailnet where it belongs and never touches a public name at all. So when I say I moved the domain, I really mean that public edge, the five or so hostnames the tunnel answers for. Nothing internal had to change, which is half the reason the move stayed calm.
 
-A few reasons piled up. The first one is just identity. I am in India. I work from India. My whole setup runs out of a Mac mini sitting in my home in India. And every time I typed `vinelabs.de` I felt this tiny mismatch, like wearing someone else's jacket that happens to fit. The `.de` was from an earlier phase, and that phase is over.
+A few reasons piled up. The first one is just identity. I am in India. I work from India. My whole setup runs out of a Mac mini sitting in my home in India. And every time I typed `vinelabs.de` I felt this tiny mismatch, like wearing someone else's jacket that happens to fit. The `.de` was from an earlier phase. That phase is not over, but I wanted my root identity to match where I actually am, so this was the right time to make the switch.
 
 The second reason was a cleaner brand. `vinelab.in` is shorter, it reads better, and it actually says where I am.
 
@@ -95,6 +95,8 @@ DOMAIN: https://locker.vinelab.in
 ```
 
 So the move here is two steps, not one. Change the value, then recreate the container. And go in knowing that any passkey you registered on the old origin needs to be added again on the new one. Master password and your normal two-factor are fine. Only the passkey side cares. I would rather you read that here than discover it while staring at a login screen that keeps saying no.
+
+One update since I wrote this. I have since deprecated Vaultwarden and moved to VaultCTL, the small password tool I mentioned earlier that I built myself, mostly because I wanted a tighter security story than I was getting before. VaultCTL is what I actually use now. Vaultwarden is parked for the moment, still up but not the thing I reach for, and it gets pulled out of the homelab for good a bit later. So treat this whole Vaultwarden section as the history of the move rather than how my setup looks today. The `DOMAIN` lesson still holds for anyone running Vaultwarden through a tunnel, which is why I am leaving it in.
 
 ## the status monitor that lied to me
 
