@@ -1,0 +1,165 @@
+---
+title: "moving a homelab from .de to .in without breaking the tunnel"
+description: "I moved my whole homelab from a .de domain to a .in one. The tunnel, the DNS, Vaultwarden, and one SQLite scare that nearly ate my status page. Here is how it went."
+pubDate: 2026-06-14
+tags: ["homelab", "cloudflare-tunnel", "dns", "self-hosting", "uptime-kuma"]
+draft: false
+heroImage: "/blog/moving-a-homelab-from-de-to-in-hero.png"
+---
+
+# moving a homelab from .de to .in without breaking the tunnel
+
+![A macOS terminal window showing a Cloudflare tunnel ingress config, with both the old .de and new .in hostnames pointing at the same local services during the migration.](/blog/moving-a-homelab-from-de-to-in-hero.png)
+
+**TL;DR**: I run a small homelab on a Mac mini, fronted by a single Cloudflare tunnel, with Tailscale guarding everything internal. I moved the public side from `vinelabs.de` to `vinelab.in`, because I operate out of India and the `.de` belonged to a different chapter. It was the right call, and I am not second guessing it. The move itself was mostly painless once I stopped treating it as one big switch. The tunnel config turned out to be only half the job, DNS is the other half, Vaultwarden has a sneaky domain setting that bites, and I nearly corrupted my status page database by being too clever with SQLite. I am keeping the `.de` though, for German related work, once DENIC clears the paperwork. Here is the whole thing, mistakes included.
+
+## why i even did this
+
+Let me start with the why, because the how only makes sense after that.
+
+For a good while my homelab lived on `vinelabs.de`. It was fine. Everything worked. The tunnel was up, the services were reachable, nobody was complaining (mostly because the only user is me). So why touch a working thing?
+
+If you have not seen the setup before, it is nothing exotic. One Mac mini at home runs the whole thing through Docker. A single Cloudflare tunnel fronts the handful of services I actually want reachable from the public internet: a landing page behind Caddy, my Vaultwarden, a small password tool I built called VaultCTL, an Uptime Kuma status page, and a webhook endpoint for some ticket automation. Everything else, n8n and ntfy and the rest, stays inside my Tailscale tailnet where it belongs and never touches a public name at all. So when I say I moved the domain, I really mean that public edge, the five or so hostnames the tunnel answers for. Nothing internal had to change, which is half the reason the move stayed calm.
+
+A few reasons piled up. The first one is just identity. I am in India. I work from India. My whole setup runs out of a Mac mini sitting in my home in India. And every time I typed `vinelabs.de` I felt this tiny mismatch, like wearing someone else's jacket that happens to fit. The `.de` was from an earlier phase. That phase is not over, but I wanted my root identity to match where I actually am, so this was the right time to make the switch.
+
+The second reason was a cleaner brand. `vinelab.in` is shorter, it reads better, and it actually says where I am.
+
+And the third reason was the practical nudge. Holding a `.de` now means dealing with DENIC, the registry that runs the `.de` zone, and proving a proper holder identity that lines up with the rules for who can own one. Sorting that out from India, for a domain that no longer matched what I was using it for, was the push I needed. A `.in` I can hold cleanly, from right here, no awkward paperwork about why someone in India is fronting a German domain.
+
+So I switched the homelab to `vinelab.in`, and looking back it was clearly the right move. But I did not kill the old one, and this is the part I actually like. `vinelabs.de` is still mine. Once I hear back from DENIC and the holder side is sorted, the plan is to give it a proper second life: German related work and the odd hobby project that genuinely belongs on a `.de`. It is not a tombstone. It is just moving to a shelf where it fits better. The homelab gets the `.in` it should have had from day one, and the `.de` gets to be the thing it was always more suited for.
+
+## the one rule that saved me: keep both live
+
+Here is the single decision that made this whole thing low stress.
+
+Do not flip from old to new in one go. Run both at the same time for a bit.
+
+My setup is one Cloudflare tunnel pointing at a bunch of local services. The routing lives in a config file, and the trick was simply to add the new hostnames next to the old ones, not replace them. Same service, two doors.
+
+```yaml
+# both domains point at the same local services during the move
+# the .de ones come out later, once i trust the .in ones
+ingress:
+  - hostname: home.vinelabs.de
+    service: http://localhost:80
+  - hostname: home.vinelab.in
+    service: http://localhost:80
+
+  - hostname: locker.vinelabs.de   # vaultwarden
+    service: http://localhost:8222
+  - hostname: locker.vinelab.in
+    service: http://localhost:8222
+
+  # ...same pattern for vault, status, agents
+
+  - service: http_status:404   # catch-all, required
+```
+
+Now both `home.vinelabs.de` and `home.vinelab.in` hit the same landing page. Nothing breaks the moment I add the new names, and I get to test the new domain properly before trusting it with anything.
+
+This is the part I would tell anyone doing a domain move. The cutover is not a single scary switch. It is a slow handover where both sides work, and then one day you quietly remove the old side.
+
+## the tunnel config is only half the story
+
+This one got me for a second, so let me save you the same confusion.
+
+Adding a hostname to the tunnel config does not make it resolve. The ingress rules tell the tunnel "if traffic for this hostname shows up, send it here". But traffic only shows up if DNS actually points the name at the tunnel in the first place. Two separate things. The config is necessary, not sufficient.
+
+So `vinelab.in` had to become a real zone in Cloudflare, with the registrar pointing at Cloudflare's nameservers, and then a DNS record per hostname routing to the tunnel. For a tunnel these are proxied CNAME records, the orange-cloud kind.
+
+And here is the small gotcha that made me doubt myself. When I went to check the new records with `dig`, I did not see a CNAME pointing at the tunnel at all. I saw Cloudflare's own IP addresses instead.
+
+```
+home.vinelab.in    A    104.21.55.148
+home.vinelab.in    A    172.67.149.38
+```
+
+For a moment I thought the routing was broken. It was not. When a record is proxied, Cloudflare hides the real CNAME and hands you its anycast IPs instead, because the whole point of proxying is that the world talks to Cloudflare and not to your origin. So an empty CNAME and a couple of `104.x` / `172.x` addresses is exactly what a working tunnel record looks like. The real test was just hitting the URL and seeing the right service answer, which it did.
+
+Has this confused you before too? You go looking for proof in `dig` and the proxy quietly rewrites the answer on you.
+
+## the vaultwarden gotcha nobody warns you about
+
+Most of my services did not care about the domain. A landing page does not know its own name. A status page does not know its own name. You point the new hostname at the same port and you are done.
+
+Vaultwarden is not like that.
+
+Vaultwarden has a `DOMAIN` setting baked into its config, and it is not cosmetic. That value is the origin used for WebAuthn, which is the thing behind passkeys and hardware security keys. If you change the domain, the old passkeys stop validating, because a passkey is tied to the exact origin it was registered against. The browser will simply refuse, and it is right to.
+
+```yaml
+# before
+DOMAIN: https://locker.vinelabs.de
+# after, then recreate the container so it actually picks this up
+DOMAIN: https://locker.vinelab.in
+```
+
+So the move here is two steps, not one. Change the value, then recreate the container. And go in knowing that any passkey you registered on the old origin needs to be added again on the new one. Master password and your normal two-factor are fine. Only the passkey side cares. I would rather you read that here than discover it while staring at a login screen that keeps saying no.
+
+One update since I wrote this. I have since deprecated Vaultwarden and moved to VaultCTL, the small password tool I mentioned earlier that I built myself, mostly because I wanted a tighter security story than I was getting before. VaultCTL is what I actually use now. Vaultwarden is parked for the moment, still up but not the thing I reach for, and it gets pulled out of the homelab for good a bit later. So treat this whole Vaultwarden section as the history of the move rather than how my setup looks today. The `DOMAIN` lesson still holds for anyone running Vaultwarden through a tunnel, which is why I am leaving it in.
+
+## the status monitor that lied to me
+
+This is my favourite kind of bug. The thing that is broken is not actually broken.
+
+I run Uptime Kuma to watch my services, and two of those monitors track my Restic backups. They are push monitors, which work backwards from a normal check. Instead of Kuma poking the service, the backup script pings Kuma after it finishes. No ping inside the window, Kuma marks it down.
+
+After the move, my backup health went red. My first thought was the obvious one, the backups are failing. They were not. The backups were running perfectly fine.
+
+The problem was the ping address. The backup scripts were still pinging `status.vinelabs.de`, and during the move that old hostname had lost its DNS. So the script would finish the backup, try to phone home to a domain that no longer resolved, fail silently on that one line, and Kuma would sit there hearing nothing and assume the worst.
+
+The fix was nicer than just swapping the domain. These scripts run on the same machine as Kuma. They have no business going out to the public internet and back just to say hello to a service sitting right next to them.
+
+```
+# was: depends on public dns + the tunnel just to report health
+https://status.vinelabs.de/api/push/xxxx
+
+# now: same box talking to itself, no dns, no tunnel, nothing to break
+http://127.0.0.1:3001/api/push/xxxx
+```
+
+The push token belongs to the Kuma instance, not the domain, so the same token works over loopback. Now the health ping does not care what my domain is or whether the tunnel is even up. It is the kind of fix that makes the original setup look a little silly in hindsight, which is usually a sign you got it right this time.
+
+## the part where i nearly lost the status page
+
+Okay. The embarrassing one. The reason this blog has a scar.
+
+I wanted my public status page to show up on the root of the status domain instead of the login dashboard. Uptime Kuma supports this through a setting. The clean way to change it is the web interface. I did not do the clean way. I decided to poke the setting straight into Kuma's SQLite database, because I had already been editing the database to add monitors and it had gone fine.
+
+Kuma runs SQLite in WAL mode. I stopped the container, ran my little update, and got back the four words you never want from a database.
+
+`database disk image is malformed`
+
+Kuma would not start. The page was gone. And the backup I had taken earlier turned out to be corrupt as well, because I had copied the database file while Kuma was still running, which with WAL mode can hand you an inconsistent snapshot. So now I had two bad copies and a service that would not come up. Lovely.
+
+The thing that saved me was SQLite's own recovery mode. It reads whatever it can out of a damaged file and rebuilds a clean one.
+
+```bash
+# pull the readable bits out of the broken db into a fresh, healthy one
+sqlite3 kuma.db ".recover" | sqlite3 recovered.db
+
+# then actually check it is clean before trusting it
+sqlite3 recovered.db "PRAGMA integrity_check;"   # want: ok
+```
+
+It came back `ok`, and almost everything survived. The one casualty was the status page row itself, sitting on exactly the pages that had gone bad. So I rebuilt that one record by hand, set it as the entry page, grouped the public services properly, and brought Kuma back up. Page restored.
+
+The lesson is not "SQLite is fragile". SQLite is wonderful. The lesson is do not hand-edit the live database of a running app just because the table is right there and it feels faster. Use the interface it gives you. And if you absolutely must touch the file, stop the app cleanly, checkpoint the WAL, take the backup from the stopped state, and run an integrity check before you trust anything. I knew all of this. I skipped it anyway because I was on a roll. That is exactly when it bites.
+
+## cutting over and removing the old domain
+
+Once the new domain had been answering for everything, and I had actually used it for a bit rather than just curl-tested it, it was time to retire the old one.
+
+This was the easy bit, finally. I pulled the `vinelabs.de` hostnames out of the tunnel config, leaving only the `vinelab.in` ones, and reloaded the tunnel. My cloudflared runs under a launchd agent, so the reload was just a matter of the process restarting and reading the trimmed config on the way up. A quick check of every service on the new domain, all green, done.
+
+The old domain still exists. It just does not point at the homelab anymore, and it is not retired either. It is waiting on DENIC, and once that clears it goes back to work for the German related projects it was always a better fit for. The homelab got the right name. The `.de` is getting the right job. I would call that a clean trade.
+
+## what i would tell myself before starting
+
+If I could send a note back to the version of me who started this, it would be short.
+
+Run both domains at the same time, there is no prize for flipping the switch in one move. Remember that the tunnel config and DNS are two different jobs and both have to be done. Check the few services that actually embed their own domain, like Vaultwarden, because those are the ones that bite. Point internal health pings at loopback, not at your own public domain, because a service should not need the open internet to talk to its neighbour. And do not get clever with a live database when a perfectly good settings page is sitting right there.
+
+None of this was hard. The only genuinely scary part was self-inflicted, which is honestly how most of my homelab scares go.
+
+So that is where I will stop. If you have a cleaner way of handling a domain move on a tunnel setup, I genuinely want to hear it, drop me a note. Otherwise, see you when the next interesting problem shows up.
