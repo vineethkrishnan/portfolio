@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.54](https://github.com/vineethkrishnan/portfolio/compare/v0.0.53...v0.0.54) (2026-06-14)
+
+
+### Features
+
+* **blog:** moving a homelab from .de to .in ([#112](https://github.com/vineethkrishnan/portfolio/issues/112)) ([62ad916](https://github.com/vineethkrishnan/portfolio/commit/62ad9161a3ea8b2b0af69edbd8ab29d48de9fc02))
+
 ## [0.0.53](https://github.com/vineethkrishnan/portfolio/compare/v0.0.52...v0.0.53) (2026-06-02)
 
 
