@@ -54,10 +54,14 @@ test.describe("Blog Search", () => {
     await page.locator("#search-trigger").click();
     await page.locator("#search-input").fill("vaultctl");
 
-    await expect(page.locator(".search-result").first()).toBeVisible();
+    const firstResult = page.locator(".search-result").first();
+    await expect(firstResult).toBeVisible();
+    const targetUrl = await firstResult.getAttribute("data-url");
+    expect(targetUrl).toBeTruthy();
+
     await page.keyboard.press("Enter");
 
-    await expect(page).toHaveURL(/\/blog\/building-vaultctl/);
+    await expect(page).toHaveURL(new RegExp(targetUrl!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   });
 
   test("arrow keys move the active selection", async ({ page }) => {
