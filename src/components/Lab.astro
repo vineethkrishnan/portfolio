@@ -14,6 +14,17 @@ import { labIntro, labSpecs, labStack, labServices } from "../data/lab";
     <p class="section-subtitle">Self-hosted on a hand-me-down Mac mini</p>
   </div>
 
+  <div class="lab-hero fade-in">
+    <img
+      src="/lab/lab-hero.png"
+      alt="A 2018 Mac mini on a wooden shelf with a ring of glowing service icons floating above it: a shield, a notification bell, a heartbeat monitor, and a workflow node, warm home corner with a plant and a few books."
+      width="1983"
+      height="793"
+      loading="lazy"
+      decoding="async"
+    />
+  </div>
+
   <p class="lab-intro fade-in">{labIntro}</p>
 
   <div class="lab-specs fade-in">
@@ -53,6 +64,19 @@ import { labIntro, labSpecs, labStack, labServices } from "../data/lab";
 </section>
 
 <style>
+  .lab-hero {
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .lab-hero img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
   .lab-intro {
     font-size: 0.9rem;
     color: var(--color-text-muted);
