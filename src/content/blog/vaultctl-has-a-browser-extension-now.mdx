@@ -1,0 +1,100 @@
+---
+title: "vaultctl Has a Browser Extension Now"
+description: "vaultctl finally lives where you actually type passwords. Here is the honest story of building the browser extension, where autofill turned out to be the whole job."
+pubDate: 2026-06-26
+tags: ["browser-extension", "wxt", "autofill", "password-manager", "open-source", "journey"]
+draft: false
+heroImage: "/blog/vaultctl-has-a-browser-extension-now-hero.png"
+---
+
+# vaultctl Has a Browser Extension Now
+
+![A developer working at his laptop in a warm, plant-filled room, with the dark VaultCTL browser extension popup floating beside him. The popup shows a teal shield-with-keyhole logo, an Unlock with Touch ID button, a masked master password field, and an Unlock button. Realistic photo with teal accents.](/blog/vaultctl-has-a-browser-extension-now-hero.png)
+
+For a long time vaultctl was three things. A single Go binary on my server, a web app, and a CLI. All of them worked. None of them were where I actually needed them, which is the exact moment a login form shows up and I have to go somewhere else to copy a password.
+
+So now there is a fourth thing. A browser extension. It sits in your toolbar, unlocks with Touch ID, and fills your logins on the page where you are standing. This post is the story of getting there, and I will be honest with you, it took a lot more than I thought.
+
+This is another post in the series where I walk through my open-source projects. If you want the why-does-this-exist and the zero-knowledge story, that is all in [building vaultctl](/blog/building-vaultctl). This one is just about the extension.
+
+## It started with a lazy question
+
+I was using the web app to grab a password, paste it, then go back. Again. And again. One of those afternoons I just typed out loud into the chat, "do we even have a browser extension?"
+
+We did not. There was a folder, some scaffolding, a popup that showed nothing useful. That was it.
+
+That one lazy question turned into the single longest stretch of work in the whole project. Funny how that goes. The features you announce proudly take a week. The feature that is "just autofill, how hard can it be" takes over your life.
+
+## Autofill is not a feature, it is the entire job
+
+Here is the thing nobody tells you. A password manager extension is maybe ten percent vault and ninety percent fighting with the web.
+
+Every login page is built differently. Some put the username and password on one screen. Some show you the email first, then the password on a second screen after a redirect. Some render the form late with JavaScript, so when your extension looks for fields on page load, there is nothing there yet. Some have a fake password field for a 2FA code that is not actually the password at all.
+
+I hit every single one of these. In order. Painfully.
+
+The multi-step logins were the first wall. You type your email, the page moves to the password step, and by then the extension has forgotten which email you were even using, so it saves a password with no username attached. Useless. I had to make it remember the email across that jump.
+
+Then the late-rendering forms. The extension would scan the page, find nothing, and give up, all before the actual login form had finished loading. So I added a delay. Then the delay caused a new problem, because if you had already started typing, the autofill would rudely stomp on your input. So then I had to guard the delayed fill against your own typing. One fix, one new bug, the usual dance.
+
+The save toast was its own little saga. You log in, the extension offers to save the password, and then the site redirects you to your dashboard and the toast vanishes before you can click it. Gone. I lost count of how many times I logged in just to watch that toast disappear. Keeping it alive across a redirect, even a cross-host or single-page-app redirect, took way more attempts than I want to admit.
+
+And the field picking. The extension kept offering to fill the 2FA code box because it looked like a password field. So I taught it to pick the real username field and not the verification-code field. Small thing. Took ages to get right.
+
+If you have ever built one of these, none of this is news to you, and you have got the scars to match.
+
+## The Google-style picker
+
+Somewhere in the middle of all this, I stopped trying to be clever with inline filling and just copied the pattern everyone already understands. A little icon inside the field. You click it, a small picker drops down showing the matching login with the site favicon and the username, password masked. You pick, it fills.
+
+Sounds simple. The fiddly part was making it behave. Keep the picker open when the field is focused. Suppress the browser's own native dropdown so you are not fighting two popups at once. Scope the suggestions to the exact site so a random login does not show up on the wrong page. Bold the username so you can actually read it at a glance.
+
+None of these are hard problems on their own. Together they are a hundred tiny papercuts, and the difference between an extension that feels nice and one that feels broken is whether you bothered to fix all hundred.
+
+The stack under all this, if you care, is [WXT](https://wxt.dev/) for the extension framework, React 19 and Tailwind 4 for the popup, zustand for state, zod for validation, hash-wasm for the crypto bits, lucide-react for icons, and i18next so the whole thing speaks English and German. Manifest V3, because Chrome gives you no choice anymore.
+
+## The rule that made everything slower and I would do it again
+
+vaultctl is a credential manager. The whole reason it exists is so you do not have to trust some other party with your secrets. So I made one rule early and stuck to it. No pulling in random third-party services for the sensitive parts. If a piece is missing, we build our own small version of it.
+
+This rule cost me time. It was worth every minute.
+
+Two examples. First, the QR code. When you set up your account you get a recovery kit, and that needs a real, scannable QR. The first version I had was, in the kindest words, a deterministic visual fingerprint. It looked like a QR. It was not a QR. Nothing could scan it. For a production credential manager, that is not a "ship it and fix later" situation. So instead of reaching for some QR library, I wrote a proper QR generator inside the project. Real encoding, real error correction, actually scannable.
+
+Second, attachments. I wanted to let you attach files to a vault item, securely. The obvious move is to bolt on MinIO or SeaweedFS or some object store. But that is a whole extra service to run, trust, and secure, for a tool whose entire pitch is "do not trust extra parties". So I built a small object storage module right into the binary. One filesystem-backed blob store, encrypted like everything else. No new service, no new trust boundary.
+
+Is my QR generator as battle-tested as a popular library? No. But it is small, I can read all of it, and nothing about my recovery kit leaves the boundary I control. For a vault, that trade is the right one every time.
+
+## The small things that ate whole evenings
+
+The big features get the commits with nice names. The small stuff is where the time actually goes.
+
+The bottom tab bar in the popup was not fixed in place. So to switch between the vault, the generator, and settings, you had to scroll all the way to the very bottom to even see the tabs. I used my own extension for two minutes and wanted to throw my laptop. Pinning the tab bar to the bottom was a five-minute fix that I should have done on day one.
+
+Copy was half broken. You could copy the username fine. Copy the password, nothing happened. A credential manager where you cannot copy the credential. Beautiful.
+
+And then, the one that made me laugh at myself. I went through the extension and found em-dashes sitting in some of the alert and notification text. If you have read anything else on this blog you know exactly how I feel about em-dashes. My own tool was using them. In my own product. I hunted them all down and replaced them with honest little hyphens. Some battles are personal.
+
+## The TOTP rabbit hole
+
+This one I have to be honest about, because I confused myself properly.
+
+vaultctl can store 2FA. The extension can show you a live TOTP code and fill it in for your logins. Good feature. But while building it I tied myself in a knot over what TOTP even meant in this context.
+
+See, the recovery kit has its own TOTP, for unlocking your vault. And separately, your saved logins can each carry their own 2FA secret, for the sites you log into. Same letters, two completely different jobs. For a while I genuinely could not tell you which one I was working on, and I kept asking myself out loud, do we even save TOTP, and if we generate the code then where is the secret coming from, and is this the vault's 2FA or the website's.
+
+The answer, once I slowed down. We store the 2FA secret for your target logins, encrypted like everything else, and generate the code on the fly. The vault's own TOTP is a separate thing. Once I drew that line clearly in my head, the feature was easy. The confusion was the hard part, not the code.
+
+There was also a related bug worth mentioning, since it is a nice example of doing too much. The extension was showing a fill suggestion on every single OTP input box on a page, even though we do not store one-time codes. Annoying little emblem popping up everywhere. Had to de-duplicate that so it only shows where it makes sense.
+
+## So, what is in it now
+
+Quite a lot, actually. Touch ID unlock. Inline autofill with the picker. Save and update prompts that survive redirects. A multi-vault switcher with cross-vault filling. Capture and fill for credit cards and identity forms, not just logins. Live TOTP codes. A password generator with a memorable-passphrase mode. A password checkup that warns you about weak or compromised passwords. Per-site "never save" if a site annoys you. English and German throughout.
+
+None of it is glamorous. All of it is the kind of thing you only notice when it is missing.
+
+If your password manager has ever filled the wrong field, or eaten your save prompt on a redirect, or shrugged at a two-step login, I hope this gives you a little sympathy for whoever built it. I certainly have more sympathy now than I did before.
+
+vaultctl is open source over at [github.com/vineethkrishnan/vaultctl](https://github.com/vineethkrishnan/vaultctl), extension folder and all, if you want to see how the sausage is made.
+
+That is pretty much it from my side today. If you have been through the same autofill pain, or you have a cleaner way of handling these multi-step login forms, I genuinely want to hear it. Those stories are always the best ones. See you soon in the next blog.
