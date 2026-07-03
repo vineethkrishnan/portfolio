@@ -18,7 +18,7 @@ test.describe("Navigation", () => {
     test.skip(!!isMobile, "Desktop-only test");
 
     const navLinks = page.locator(".nav-links .nav-link");
-    const expectedLinks = ["About", "Skills", "Projects", "Blog", "Contact"];
+    const expectedLinks = ["About", "Skills", "Projects", "Lab", "Blog", "Contact"];
 
     for (const label of expectedLinks) {
       await expect(navLinks.filter({ hasText: label })).toBeVisible();
@@ -63,7 +63,7 @@ test.describe("Mobile Navigation", () => {
     await expect(menu).toBeVisible();
 
     const mobileLinks = menu.locator(".mobile-link");
-    await expect(mobileLinks).toHaveCount(5);
+    await expect(mobileLinks).toHaveCount(6);
   });
 
   test("mobile menu closes on link click", async ({ page, isMobile }) => {

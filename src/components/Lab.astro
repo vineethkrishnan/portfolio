@@ -1,0 +1,213 @@
+---
+import { labIntro, labSpecs, labStack, labServices } from "../data/lab";
+---
+
+<div class="section-divider"></div>
+
+<section class="section" id="lab">
+  <div class="fade-in">
+    <div class="section-label">
+      <span class="section-label-line"></span>
+      <span class="section-label-prefix">~/lab</span>
+    </div>
+    <h2 class="section-title">The Lab</h2>
+    <p class="section-subtitle">Self-hosted on a hand-me-down Mac mini</p>
+  </div>
+
+  <p class="lab-intro fade-in">{labIntro}</p>
+
+  <div class="lab-specs fade-in">
+    {labSpecs.map((spec) => (
+      <div class="spec">
+        <span class="spec-label">{spec.label}</span>
+        <span class="spec-value">{spec.value}</span>
+      </div>
+    ))}
+  </div>
+
+  <div class="lab-stack fade-in">
+    <span class="lab-stack-label">Runs on</span>
+    <div class="lab-stack-tags">
+      {labStack.map((tech) => (
+        <span class="tag">{tech}</span>
+      ))}
+    </div>
+  </div>
+
+  <div class="lab-services">
+    {labServices.map((service, i) => (
+      <div class={`lab-card card fade-in stagger-${Math.min(i + 1, 5)}`}>
+        <div class="lab-card-top">
+          <h3 class="lab-name">{service.name}</h3>
+          <span class={`exposure exposure-${service.exposure}`}>{service.exposure}</span>
+        </div>
+        <p class="lab-desc">{service.description}</p>
+      </div>
+    ))}
+  </div>
+
+  <p class="lab-legend fade-in">
+    <span class="legend-item"><span class="legend-dot legend-public"></span>public reaches the internet through a single Cloudflare tunnel</span>
+    <span class="legend-item"><span class="legend-dot legend-internal"></span>internal stays inside the Tailscale tailnet</span>
+  </p>
+</section>
+
+<style>
+  .lab-intro {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    line-height: 1.8;
+    max-width: 60ch;
+    margin-bottom: 1.5rem;
+  }
+
+  .lab-specs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .spec {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-accent-subtle);
+  }
+
+  .spec-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted);
+  }
+
+  .spec-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .lab-stack {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 2rem;
+  }
+
+  .lab-stack-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-accent);
+  }
+
+  .lab-stack-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .lab-services {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .lab-services {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 900px) {
+    .lab-services {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  .lab-card {
+    padding: 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .lab-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .lab-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
+
+  .exposure {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.12rem 0.4rem;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+
+  .exposure-public {
+    color: var(--color-accent);
+    background-color: var(--color-accent-subtle);
+    border: 1px solid var(--color-accent);
+  }
+
+  .exposure-internal {
+    color: var(--color-text-muted);
+    background-color: transparent;
+    border: 1px solid var(--color-border);
+  }
+
+  .lab-desc {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+
+  .lab-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+    font-size: 0.76rem;
+    color: var(--color-text-muted);
+  }
+
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .legend-public {
+    background-color: var(--color-accent);
+  }
+
+  .legend-internal {
+    background-color: var(--color-text-muted);
+  }
+</style>
