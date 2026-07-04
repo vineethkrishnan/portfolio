@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.56](https://github.com/vineethkrishnan/portfolio/compare/v0.0.55...v0.0.56) (2026-07-04)
+
+
+### Features
+
+* **blog:** add post on teaching WeSpend to read GPay screenshots ([#119](https://github.com/vineethkrishnan/portfolio/issues/119)) ([cd7e721](https://github.com/vineethkrishnan/portfolio/commit/cd7e72106e3fd2e661c3fe3489e65a3177c2f6dc))
+
 ## [0.0.55](https://github.com/vineethkrishnan/portfolio/compare/v0.0.54...v0.0.55) (2026-07-03)
 
 
