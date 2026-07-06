@@ -1,0 +1,86 @@
+---
+title: "My Portfolio Has More CI Than My Day Job"
+description: "A personal site only I edit is on release 0.0.54, has a CHANGELOG, a commit linter, security scans, and Playwright tests. Here is how a blog became more engineered than the products I ship for work."
+pubDate: 2026-07-06
+tags: ["ci-cd", "over-engineering", "astro", "github-actions", "personal-site"]
+draft: false
+heroImage: "/blog/my-portfolio-has-more-ci-than-my-day-job-hero.png"
+---
+
+# My Portfolio Has More CI Than My Day Job
+
+![A South Asian developer in a black t-shirt sitting alone at a glass desk in a dramatic, cinematic office, looking slightly overwhelmed at a large monitor showing a green CI pipeline, floating holographic badges reading version 0.0.54 and a CHANGELOG hovering around him, warm rim lighting, shallow depth of field.](/blog/my-portfolio-has-more-ci-than-my-day-job-hero.png)
+
+> **TL;DR:** My personal site is on release 0.0.54. It has a CHANGELOG, a commit linter that rejects my own commits, three security scanners, browser tests, and visual regression checks. Nobody uses any of this except me. I regret none of it.
+
+The other day I sat down to fix a typo on my own website. One word. I wrote the commit, pushed it, and my own CI slapped it back in my face because the commit message did not follow Conventional Commits.
+
+Let me sit with that for a second.
+
+A machine I set up, to guard a website only I edit, refused a one-word typo fix because I forgot to put a `fix(blog):` in front of my message. And the funny part? I did not even feel annoyed. I felt a little proud. That is the exact moment I realised my portfolio has quietly become more engineered than most of the actual products I get paid to build.
+
+## How did a blog end up with a version number
+
+Let me show you the receipt first.
+
+My site is at version **0.0.54**. That is not a typo and it is not a joke. There is a real `package.json` with a real version field, and a tool called release-please that bumps it every single time I merge something. Each release cuts a tag, writes a GitHub release, and appends to a `CHANGELOG.md` that reads like a serious piece of software.
+
+Here is an actual entry from it:
+
+```markdown
+## [0.0.54](https://.../compare/v0.0.53...v0.0.54) (2026-06-14)
+
+### Features
+* **blog:** moving a homelab from .de to .in
+```
+
+A changelog. With compare links. Documenting the breaking changes to... a page about my home server. Fifty-three of these releases sit in my git history, each one a tiny ceremony for shipping a blog post nobody was waiting on.
+
+The thing is, a changelog exists so users know what changed between versions they might be running. My "users" are me, and the version they are running is whatever loaded when they opened the tab. There is exactly one deployment and it is always the latest one. The whole concept does not apply. I built it anyway, and honestly it is kind of nice to scroll through.
+
+## The commit police live in my repo now
+
+So back to that typo. The reason my commit got rejected is a workflow called commitlint. Every message I write gets checked against a set of rules. Right type. Right scope. Lowercase subject. Under a certain length. No trailing period.
+
+If I fumble any of it, the whole thing goes red and I have to go back and fix my own sentence before my own website will accept it.
+
+On a team, this makes complete sense. You have ten people writing commits and you want the history to read consistently so the changelog generates cleanly. On a repo where the only author is me, arguing with myself at two in the morning about whether a change is a `fix` or a `chore`, it is pure theatre. Good theatre though. I have written cleaner commit messages on my blog than on things that pay my rent, and that is a slightly embarrassing sentence to type out.
+
+## Tests. For a website. That only I touch.
+
+Now we get to the part where I really lost the plot.
+
+I write Playwright tests for my portfolio. Real browser tests, spinning up a headless Chrome, clicking through the site to make sure it works. There is one for navigation. One for the search modal. One for the blog pages, one for the sections on the landing page, one for the theme switcher.
+
+And then, because apparently that was not enough, there is visual regression. My CI takes screenshots of the site, compares them pixel by pixel against saved snapshots, and if anything shifts it flags it and commits the new snapshots back. So if I nudge a button three pixels to the left, a robot notices and files the paperwork.
+
+Who is this protecting? Me. From me. The only person who can break this site is the same person writing the tests to catch himself breaking it. It is the software equivalent of leaving myself angry sticky notes.
+
+Have you ever built a safety net so elaborate that the net became the most impressive thing in the building? Because that is roughly where I landed.
+
+## The rest of the over-engineering buffet
+
+While I was in there, I did not stop at tests. The site also has:
+
+- A **command palette search**, the little `Cmd+K` modal that power tools have, so I can fuzzy-search my own blog posts with a keyboard shortcut. I have around forty posts. I know all of them. I still built the search.
+- **giscus comments**, wired through GitHub Discussions, so readers can comment. The comment count is, let us say, a very honest number.
+- **Cross-posting**, an automated job that pushes new posts out to dev.to on its own, with a cache so it does not double-post.
+- Three separate **security scanners** running on every change. CodeQL for code analysis, a dependency review, and Trivy scanning the filesystem for known vulnerabilities. On a static site. That has no login, no database, no user input, and no server doing anything at runtime. The attack surface is roughly the size of a postcard and I have three guards watching it.
+
+Reading that list back, it sounds like I am describing a fintech backend, not a place where I complain about Docker.
+
+## So why do it, really
+
+Here is the honest turn, and it is not the one you might expect.
+
+None of this was necessary. I want to be very clear about that. A personal site needs a build step and a place to host it, full stop. Everything else I piled on top is decoration.
+
+But every single piece of that decoration taught me something I then used at work. Setting up release-please on a low-stakes repo meant that when a real project needed automated releases, I already knew the sharp edges. The Playwright visual regression I fought with here is the same setup I later reached for on a production app where a broken layout actually costs money. My personal site turned into the sandbox where I get to make all the mistakes for free, with nobody paged and no customer affected.
+
+The day job gives you production systems but not always the freedom to experiment on them. You cannot casually try a new CI pattern on the thing that pays real salaries. So the experiments have to live somewhere, and for me that somewhere is a blog with a version number.
+
+Is it overkill? Completely. Would I rip any of it out? Not a chance. The overkill is the point.
+
+So that is the confession. My portfolio has a CHANGELOG nobody reads, tests nobody triggers, and security scans for an attack surface that does not exist, and I would set every bit of it up again tomorrow. If you have a personal project quietly carrying more engineering than it could ever need, you already know it is not really about the project.
+
+Not going to pretend this was a perfectly rational way to spend my evenings. But if even one part of it nudges you to treat your own side project as the safe place to try the scary stuff, then it was worth writing down. See you in the next one.
