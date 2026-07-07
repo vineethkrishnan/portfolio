@@ -1,0 +1,76 @@
+---
+title: "I taught WeSpend to read GPay screenshots. OCR fought back."
+description: "WeSpend can read a payment screenshot and fill in the amount by itself. Getting there meant fighting OCR that reads the rupee sign as a 7 and the cents as the letter O."
+pubDate: 2026-07-04
+tags: ["react-native", "ocr", "expense-tracker", "wespend", "upi"]
+draft: false
+heroImage: "/blog/teaching-wespend-to-read-gpay-screenshots-hero.png"
+---
+
+# I taught WeSpend to read GPay screenshots. OCR fought back.
+
+![A smartphone on a warm wooden desk showing a mobile payment success screen with a rupee amount, a teal scan line sweeping across it and a few digits dissolving into particles as if being misread, a second phone beside it showing an expense-tracker app. Cinematic realistic photo with moody lighting and teal accents.](/blog/teaching-wespend-to-read-gpay-screenshots-hero.png)
+
+[WeSpend](https://vineethkrishnan.github.io/wespend/) is a small app I built for my household. One person funds a shared monthly pot, everyone logs what they spend from their own phone, and at the end of the week it works out who owes whom. The whole thing lives or dies on one boring question: how easy is it to add an expense? Because if adding an expense takes ten taps, nobody does it, and then the numbers are a lie.
+
+So I added what felt like a lazy little shortcut. You pay someone on GPay, you get that green success screen, you share that screenshot straight to WeSpend, and the app reads the amount and fills it in for you. One share, done. On-device OCR, no typing.
+
+It worked beautifully. For exactly half the screenshots.
+
+## Half the screenshots. The nice round half.
+
+Here is the pattern I did not notice at first. A payment of `₹287` came through perfectly, every single time. A payment of `₹130.00` came through as zero rupees. Same app, same screen, same OCR. The only difference was those two little zeros after the dot.
+
+Clean integer amounts, the ones with no paise, sailed through. The moment there was a `.00` on the screen, the amount field just quietly filled in `0` and sat there looking innocent.
+
+If you have ever watched an app fill in a number with total confidence and get it completely wrong, you know the exact little sting I felt. It is worse than an error. An error at least admits something went wrong.
+
+So I did what you do. I started printing out exactly what the OCR was handing me, one screenshot at a time. And that is where it got funny.
+
+## OCR is not bad at reading. It is bad in very specific, creative ways.
+
+I was using Google's ML Kit for the on-device text recognition. It is genuinely good. But a stylized GPay payment screen is not clean print, and the ways it got things wrong were oddly consistent. Once I saw the actual output, the mystery fell apart.
+
+Here is the collection I ended up with.
+
+**It eats the rupee sign.** The `₹` on that success screen is a nice stylized glyph, and OCR would sometimes just drop it entirely. `₹130.00` came back as `130.00`. Not the end of the world on its own.
+
+**It reads zero as the letter O.** This was the real culprit behind the `.00` problem. `130.00` came back as `130.OO`, with two capital letter O's where the zeros should be. To my parser, `130.OO` is not a number at all, so it gave up and left `0`.
+
+**It reads the decimal point as a space.** On some screens the same amount came back as `130 00`. Now it looks like two separate numbers, `130` and `00`, and neither is the answer.
+
+**And my favourite, it reads the rupee sign as the number 7.** This one I did not see coming. On a few screens the `₹` was not dropped, it was confidently transcribed as a `7`. So `₹280.00` came back as `7280.00`. That is not a missing rupee, that is a fake two thousand rupees added to my payment. Imagine settling the week off that.
+
+I sat there looking at `130.OO` and `7280.00` and honestly laughed. My clean little shortcut had walked straight into the real world.
+
+## Fixing it, one liar at a time
+
+The temptation here is to write one big clever regex that handles everything. Do not do that. I tried. It becomes unreadable in about twenty minutes and then it eats a phone number and tells you the auto ride cost forty-two lakh.
+
+What actually worked was treating each specific way OCR lies as its own small, named repair, each one narrow enough that I could write a test for it and trust it.
+
+The rupee-as-7 one is a good example. If a number starts with `7`, and the character just before it is not a digit, and stripping that leading `7` still leaves a valid positive amount, I treat it as a currency amount where the `7` was really the rupee sign. So `7280.00` becomes `280.00`. There is one important guard: if the character after that `7` is a comma, I leave it completely alone, because `7,280.00` is a perfectly real number in Indian grouping and I have no business touching it.
+
+The mangled cents was the fix that actually shipped the feature. When a line looks like a real amount but the fractional part is unreadable, one or two characters of garbage like `OO` or a stray space, I now trust the integer part and just throw the broken fraction away. `130.OO` becomes `130`. `130 00` becomes `130`. The screen said one hundred and thirty rupees, and one hundred and thirty rupees is what you get.
+
+The one rule that keeps all of this safe is a cap I almost forgot: the discarded fraction can only be one or two characters. That tiny limit is doing a lot of quiet work. A reference number, a date, a phone number, a UPI transaction ID, none of those have a short one-or-two-character tail, so none of them get mistaken for an amount with mangled cents. Without that cap, this whole feature would be a slot machine.
+
+There was one more from earlier that fits the same family. OCR sometimes drops the decimal point but keeps the thousands comma, so `1,557.40` arrives as `1,55740`. A real integer's last comma group is always exactly three digits, in both Indian and Western grouping. So if that last group is longer than three, I know the final two digits are the dropped paise, and I put the dot back. Same idea every time. Learn one specific way the machine lies, write the narrow repair, cap it so it cannot overreach.
+
+## The other half of the problem: which number is even the amount?
+
+I have been talking as if there is one number on the screen. A bank SMS is worse. It has the amount, the available balance, maybe a transaction reference, sometimes a date that reads like a number too.
+
+So the parser also has to know which figure is the spend. A running balance is never the amount you spent, so anything sitting next to words like `avbl`, `bal`, or `balance` gets ruled out. A word like `credited` or `refund` flips the whole thing from a spend to a credit. And a genuine debit names the rail it went over, `a/c`, `upi`, `imps`, `card`, while a promo message or an OTP never does. None of this is glamorous. All of it is the difference between an expense tracker you trust and one you quietly stop using.
+
+You do not need me to spell out which of those two an untrusted expense tracker becomes.
+
+## What I actually took away from this
+
+Every one of these fixes started as a real screenshot that embarrassed me. So every one of them became a test with the actual garbled text pasted in, mangled O's and fake sevens and all. My test file now has a merchant called Loaded Gazebo in it, which is not a real shop, it is just the fake payee I kept reusing while chasing this. That file is the most honest documentation in the whole project, because it is literally a list of the ways the real world broke my assumptions.
+
+The bigger lesson, if there is one, is that OCR on real screenshots is not a clean input you parse. It is an adversary with a small, learnable set of tricks. You do not beat it with cleverness. You beat it by writing down each trick, one narrow rule at a time, and capping every rule so it can never be too confident. Which, now that I type it out, is basically how you survive anything that lies to you in predictable ways.
+
+Anyway, WeSpend reads my GPay screenshots now. Round amounts, paise, dropped rupee signs, fake sevens, all of it. Adding an expense is one share again, the way it was always supposed to be, and the household numbers have stopped being a polite fiction.
+
+Okay, that is enough out of me for today. If your own side project has one of these little features that turned out to be an entire iceberg, I would genuinely love to hear what was hiding under yours. Until the next one, go easy on your OCR, it is trying its best.

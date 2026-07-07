@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.56](https://github.com/vineethkrishnan/portfolio/compare/v0.0.55...v0.0.56) (2026-07-04)
+
+
+### Features
+
+* **blog:** add post on teaching WeSpend to read GPay screenshots ([#119](https://github.com/vineethkrishnan/portfolio/issues/119)) ([cd7e721](https://github.com/vineethkrishnan/portfolio/commit/cd7e72106e3fd2e661c3fe3489e65a3177c2f6dc))
+
+## [0.0.55](https://github.com/vineethkrishnan/portfolio/compare/v0.0.54...v0.0.55) (2026-07-03)
+
+
+### Features
+
+* **blog:** add post on the vaultctl browser extension ([#114](https://github.com/vineethkrishnan/portfolio/issues/114)) ([41e05b1](https://github.com/vineethkrishnan/portfolio/commit/41e05b1c82206972f85761c83fd4f7aeea604e42))
+* **lab:** add a dedicated homelab section to the landing page ([#115](https://github.com/vineethkrishnan/portfolio/issues/115)) ([f885963](https://github.com/vineethkrishnan/portfolio/commit/f8859634c25ae51765b32c9ca0333d55ad8bc991))
+* **lab:** add a hero image to the lab section ([#118](https://github.com/vineethkrishnan/portfolio/issues/118)) ([d4e4c8c](https://github.com/vineethkrishnan/portfolio/commit/d4e4c8cc2b16d25f2cd7484fb2ff01727b235430))
+
+
+### Bug Fixes
+
+* **deps:** bump astro to 6.4.8 and pin vite to 7.3.x to clear HIGH CVEs ([#116](https://github.com/vineethkrishnan/portfolio/issues/116)) ([70efe34](https://github.com/vineethkrishnan/portfolio/commit/70efe343ac241038861de4b8da19836119861e93))
+
 ## [0.0.54](https://github.com/vineethkrishnan/portfolio/compare/v0.0.53...v0.0.54) (2026-06-14)
 
 
