@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.57](https://github.com/vineethkrishnan/portfolio/compare/v0.0.56...v0.0.57) (2026-07-07)
+
+
+### Features
+
+* **blog:** add post on over-engineering my portfolio CI ([#121](https://github.com/vineethkrishnan/portfolio/issues/121)) ([ea3728e](https://github.com/vineethkrishnan/portfolio/commit/ea3728e5028fa3a76d8649d69ae0728a830c5ce6))
+
 ## [0.0.56](https://github.com/vineethkrishnan/portfolio/compare/v0.0.55...v0.0.56) (2026-07-04)
 
 
