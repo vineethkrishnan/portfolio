@@ -1,0 +1,153 @@
+---
+title: "The cron job that had no user"
+description: "A scheduled job in a multi-tenant NestJS backend kept failing at 2 AM with 'Missing active user in context'. Nobody was logged in, because nobody logs in a cron. Here is the CLS trap and the fix."
+pubDate: 2026-07-13
+tags: ["nestjs", "cron", "cls", "multi-tenant", "async-local-storage", "ops"]
+draft: false
+heroImage: "/blog/the-cron-job-that-had-no-user-hero.png"
+---
+
+# The cron job that had no user
+
+![Flat editorial illustration of a developer at his desk at night, working on a laptop that shows a red locked-padlock icon, a small friendly white robot standing beside the desk with no keycard. Dim office, warm desk lamp glow, soft muted colors, modern minimal style.](/blog/the-cron-job-that-had-no-user-hero.png)
+
+> **TL;DR**: I added a scheduled job to a multi-tenant NestJS backend. It kept failing with "Missing active user in context". The use cases were reading the current org from a per-request CLS store, and a cron has no request, so the store was empty. The fix was to open a fresh context per tenant with a system user before doing any work, and then to write a test that runs the real job under an empty context so nobody can quietly break it again.
+
+So there I was, reading the morning logs, and I find this line sitting there at some ungodly hour: `Missing active user in context`. From a cron job. A job that runs on a timer, all by itself, while every human who could possibly be a "user" is fast asleep.
+
+An automated job being told it is not logged in. Take a second with that one.
+
+The funny part is the app was completely right to complain. I was the one who set it up wrong.
+
+## The setup that worked fine for months
+
+The backend is multi-tenant. Many organisations, one codebase, and every single read or write has to be scoped to one org. You never want tenant A accidentally seeing tenant B's data. That rule is basically the whole ballgame.
+
+So how does the app know which org a request belongs to? It uses CLS. If you have not run into it, CLS in NestJS (the `nestjs-cls` package) is a nice wrapper over Node's `AsyncLocalStorage`. Think of it as a little box that lives for the duration of one request. Something early in the request pipeline drops the authenticated user into that box, and anything running later in the same request can reach in and pull it back out. No prop-drilling the user through fifteen function calls. It is genuinely pleasant.
+
+There is a small service wrapping all of this. Simplified, the important bit looks like this:
+
+```typescript
+requireActiveUser(): RequiredActiveUserContext {
+  const activeUser = this.get('activeUser')
+  if (!activeUser) {
+    // nobody in the box - we refuse to guess which tenant this is
+    throw new UnauthorizedError('Missing active user in context')
+  }
+
+  const { userId, organizationId } = activeUser
+  return { activeUser, userId, organizationId }
+}
+```
+
+And the use cases lean on it. A typical one starts by asking "who am I acting as, and which org?" and goes from there:
+
+```typescript
+async execute(command: SomeCommand) {
+  const { organizationId } = this.contextService.requireActiveUser()
+  // ...everything below is scoped to that org
+}
+```
+
+This is clean. It means no use case can accidentally run without a tenant. If the box is empty, you get a loud `UnauthorizedError` instead of a silent data leak. For every HTTP request, this is exactly what you want.
+
+You can probably already see the trap I was about to walk into.
+
+## Then I added a cron
+
+The feature was simple. Every so often, go clean up some stale records across all tenants. Standard housekeeping stuff. NestJS makes this a one-liner with `@Cron`:
+
+```typescript
+@Cron(CronExpression.EVERY_30_MINUTES)
+async handleCron(): Promise<void> {
+  await this.reconcileEverythingUseCase.execute()
+}
+```
+
+Looks harmless. I wrote it, the tests I had were green, I shipped it, and I moved on with my life.
+
+Here is what I did not stop to think about. A cron job does not run inside a request. There is no login, no token, no middleware doing its thing before the handler fires. The timer just goes off and calls the method directly. Which means that little CLS box? Empty. Completely empty.
+
+So the very first thing the use case does - `requireActiveUser()` - looks in the box, finds nothing, and throws. And because I had wrapped the cron body in a polite `try/catch` that just logs the error, it did not crash anything loud. It just failed, quietly, over and over, on a timer, writing one sad line into the logs each time while I slept.
+
+If you have ever bolted a cron onto an app that was built request-first, you know this exact flavour of pain.
+
+## Why the obvious fixes are wrong
+
+My first instinct was the lazy one. Just skip the check for crons, no? Read the org some other way and stop calling `requireActiveUser`.
+
+Bad idea. That check is load-bearing. It is the thing standing between "scoped to one tenant" and "oops, ran across all data with no scope". Weakening it to make a cron happy is how you turn a small bug into a data-isolation incident. Hard no.
+
+Second instinct: fake a user. Grab some admin account, shove it in the box, done. Also bad. Now your background job is impersonating a real human who did not do anything, audit logs get muddy, and the day that admin gets deactivated your cron mysteriously dies. You are just moving the problem somewhere darker.
+
+The real issue was never the check. It was that a cron genuinely has no user, and pretending otherwise is the mistake. What a cron actually has is a job to do on behalf of the system, for a specific tenant. So the context it needs is not a person. It is the system, scoped to an org.
+
+## Running as the system
+
+The fix was to give the context service a second way in. Not "I am this logged-in human", but "I am the system, working on this org". Here is the shape of it:
+
+```typescript
+runAsSystem<T>(organizationId: OrgId, fn: () => Promise<T>): Promise<T> {
+  return this.cls.run({ ifNested: 'override' }, () => {
+    // put a system identity in the box, scoped to one tenant
+    this.set('activeUser', new SystemUser({ organizationId }))
+    return fn()
+  })
+}
+```
+
+`cls.run` opens a brand new box and runs your function inside it. Before running, we drop a `SystemUser` in, carrying the one org this slice of work belongs to. Now when the use case calls `requireActiveUser` (or whatever reads the org), the box is not empty anymore. It finds a legit system identity, gets the org id, and does its thing. No fake human. No skipped check. The safety rail stays exactly where it was.
+
+That one option in there - `ifNested: 'override'` - is worth a mention. It says "even if somehow this runs inside an existing context, do not inherit the parent's box, start clean". For a background job you really do not want to accidentally pick up some leftover state from a context that opened earlier, like a database transaction that is still hanging around. Clean slate, every time. It is a small flag that saves you from a category of very confusing bugs later.
+
+And the cron itself becomes a loop, because a cron is not one tenant, it is all of them:
+
+```typescript
+@Cron(CronExpression.EVERY_30_MINUTES)
+async handleCron(): Promise<void> {
+  const orgs = await this.getAllOrgsToProcess()
+
+  await Promise.all(
+    orgs.map((org) =>
+      this.contextService.runAsSystem(org.id, () =>
+        this.reconcileEverythingUseCase.execute(org.id),
+      ),
+    ),
+  )
+}
+```
+
+Each org gets its own fresh context. The use cases underneath did not change at all - they still ask the box "which org?" and still get a real answer. The only thing that changed is who fills the box before they look. During a request, it is the logged-in user. During a cron, it is the system, one org at a time.
+
+## The part that actually stops me repeating this
+
+Fixing the bug felt good for about a minute. Then the uncomfortable thought showed up. What stops future-me, six months from now, from adding a new cron and forgetting the `runAsSystem` wrapper all over again?
+
+Because here is the nasty bit about this bug: it does not show up in normal tests. Most tests either call the use case directly with a user already prepared, or spin up a context on purpose. Both of those hide the exact thing that breaks in production, which is the empty box. The bug only appears when something runs with genuinely nothing in the context, which is precisely the one condition your happy-path tests never reproduce.
+
+So the guard had to reproduce that condition on purpose. The trick was a tiny helper that builds a real context service backed by a truly empty store:
+
+```typescript
+export const createEmptyContextService = (): ContextService =>
+  new ContextService(new ClsService(new AsyncLocalStorage()))
+```
+
+No user, no request, no setup. Exactly what a cron sees at 2 AM. And then a test that wires up the real job with the real use case (repos mocked, everything else genuine) and asserts one thing - it does not blow up under an empty context:
+
+```typescript
+it('runs under an empty context without UnauthorizedError', async () => {
+  await expect(job.handleCron()).resolves.toBeUndefined()
+})
+```
+
+If someone later adds a context-dependent call into that job's path and forgets to wrap it, this test goes red immediately, with a stack trace pointing right at the problem, in CI, long before it ever reaches a sleepy production log. That is the whole point. The bug is invisible in the wrong test and impossible to miss in the right one.
+
+## What I actually took away from this
+
+The lesson that stuck was not really about CLS or crons. It was that "the current user" is an assumption baked so deep into a request-first app that you stop seeing it. Every use case quietly assumes somebody is logged in, because for years somebody always was. The moment you introduce an entrypoint that runs without a request - a cron, a queue worker, a CLI command, a webhook consumer - that assumption walks off a cliff, and it does it quietly, in a try/catch, where you will not notice until you happen to read the logs.
+
+So now, any time I add something that runs outside a request, the first question I ask is boring and useful: who is the context here, and who fills it before any real work starts? If I cannot answer that in one sentence, I am not ready to write the job yet.
+
+That is the story. A robot got told it was not logged in, and it was completely correct. If it saves you one confused morning squinting at "Missing active user in context", then writing this down did its job.
+
+Not going to pretend I designed this cleanly the first time. I shipped the broken version, the logs caught me, and the test only exists because the bug embarrassed me into writing it. But if even one part of this helped someone dodge the same 2 AM head-scratcher, then it was worth putting down. See you in the next one.
