@@ -9,6 +9,15 @@ export interface Project {
 
 export const projects: Project[] = [
   {
+    name: "WeSpend",
+    description:
+      "Household expense tracker for couples and families sharing a monthly pot. Automatic daily and weekly limits, one-tap weekly settlement, real-time sync across phones. Expo + React Native on Supabase.",
+    language: "TypeScript",
+    stars: 0,
+    url: "https://github.com/vineethkrishnan/wespend",
+    topics: ["expo", "react-native", "supabase", "expense-tracker"],
+  },
+  {
     name: "backupctl",
     description:
       "Multi-project backup orchestration service for PostgreSQL, MySQL & MongoDB with Restic storage, GPG encryption, scheduled runs, notifications, audit trails, crash recovery, and a 14-command CLI.",
