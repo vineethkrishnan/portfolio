@@ -1,0 +1,147 @@
+---
+title: "The .de domain I unblocked just to redirect it"
+description: "A German .de domain I own sat blocked by DENIC over holder data. Here is how it got unblocked, and why the big payoff was a single 301 redirect to another domain."
+pubDate: 2026-07-13
+tags: ["cloudflare", "dns", "denic", "domains", "self-hosting"]
+draft: false
+heroImage: "/blog/the-de-domain-i-unblocked-just-to-redirect-it-hero.png"
+---
+
+# The .de domain I unblocked just to redirect it
+
+![A tall barrier gate lifting to reveal a signpost with a bent arrow pointing away to another road, flat illustration, soft colors, modern editorial style, clean design.](/blog/the-de-domain-i-unblocked-just-to-redirect-it-hero.png)
+
+> **TL;DR**: I own `vinelabs.de`, a German domain. It went into a blocked state because DENIC could not verify my holder data, which is a real thing when you are not a German owner. A while later the block was lifted. And after all that, what did I do with the freshly freed domain? I did not build anything on it. I pointed it at another domain I own, `vinelab.in`, with a Cloudflare redirect that runs entirely at the edge. This is the story, plus the one small DNS trick that makes the redirect work without ever touching a server.
+
+So here is a fun thing nobody tells you when you buy a `.de` domain from outside Germany.
+
+DENIC, the registry that runs `.de`, actually cares who you are. Not in a vague terms-of-service way. In a "we need to verify the holder data on this domain and until we do, it is going nowhere" way. I am an Indian developer. I bought a German domain because the brand I want to put on some of my work sits in the DE and EU lane. All perfectly legitimate. But to DENIC I was just a holder record that did not fully check out yet, and so the domain sat there. Registered, mine, and blocked.
+
+If you have ever owned something official in a country you do not physically live in, you know the particular flavour of low-grade paperwork dread that comes with it. It is never dramatic. It is just a quiet "please confirm your details" that sits on your mind for longer than it should.
+
+## What "blocked" actually means for a .de
+
+This is not the same as the domain being taken away. The registration was fine. What was not fine was the holder data, the name and address tied to the domain, which DENIC could not verify to their satisfaction. So the domain went into a state where it exists on paper but does not do anything useful. You cannot really point it anywhere while it is in that limbo.
+
+The fix was not clever on my side. The holder data got verified, and one fine day I got the email from DENIC saying the block had been lifted. That was the whole resolution. No war story, no escalation, no support ticket saga. Just a verification going through and an email landing in my inbox.
+
+I did not fully trust the email though. Emails lie, or at least they get ahead of reality. So I went to check for myself.
+
+## Checking it myself, because one email is not proof
+
+The nice thing about `.de` is that DENIC exposes a real whois. So I asked it directly instead of believing a notification.
+
+```bash
+whois vinelabs.de
+```
+
+The line that mattered:
+
+```
+Domain:   vinelabs.de
+Status:   connect
+Nserver:  dns1.registrar-servers.com
+          dns2.registrar-servers.com
+```
+
+`connect` is the healthy state. In DENIC terms it means the domain is registered and properly connected to the network, which is exactly the boring, working status you want. It is not `failed`, which is the soft-blocked state where the nameservers or the holder data are not right. And it is not `free`, which would mean nobody owns it. So `connect` was the green light.
+
+The other thing I noticed: no A record, no AAAA record, no `www` CNAME. Nothing was pointed anywhere. The domain was active but completely empty.
+
+Which, honestly, was perfect. An active domain with zero records is a clean slate. Nothing to collide with, nothing to migrate, nothing to break. I could point it wherever I wanted.
+
+## The big decision: build nothing
+
+Here is where I will be honest with you, because that is the whole point of this blog.
+
+After all that verifying and waiting and checking whois like a nervous parent, I did not build a site on `vinelabs.de`. No landing page. No product. No grand launch to justify the wait.
+
+I already have `vinelab.in` running. That one is live, sitting behind Cloudflare, serving cleanly over HTTPS on both the apex and `www`. So the sensible thing, the thing that took the least effort and made the most sense, was to just send `vinelabs.de` over to it. One domain, one destination, done.
+
+So the payoff for unblocking a German domain was a redirect. That is it. A 301.
+
+Do you also do this, where you fight to unlock some capability and then use it for the most modest possible thing? Because I felt slightly silly, and slightly pleased, at the same time.
+
+## The actual trick: redirect at the edge, touch no server
+
+Now the interesting part, because there is one small thing here worth stealing.
+
+A redirect has to be answered by something. Normally you think, okay, I need a tiny server somewhere that receives the request and replies with "go over there". But I did not want to run a box just to bounce traffic. That is silly for a redirect.
+
+Cloudflare can do the whole thing at its edge, and the way you set it up looks slightly weird the first time. You give the domain a DNS record pointing at an IP that does not exist on purpose.
+
+I added `vinelabs.de` to Cloudflare on the free plan, same account as `vinelab.in`. The DNS scan found nothing to import, which I already knew. Then I added two records:
+
+```
+A     @     192.0.2.1      Proxied (orange cloud)
+CNAME www   vinelabs.de    Proxied (orange cloud)
+```
+
+That `192.0.2.1` is not a typo and it is not my server. It is a reserved address from a block the internet standards set aside for documentation and testing (`TEST-NET-1`, from RFC 5737). It is guaranteed to never be a real host. So why point at it?
+
+Because the request never actually gets there. With the orange cloud on, Cloudflare sits in front of that record. The request hits Cloudflare's edge, the redirect rule fires, and the visitor gets bounced before anything ever tries to reach the origin. The dummy IP is just a placeholder so the DNS record exists and the proxy has something to attach to. If I left the cloud grey instead of orange, Cloudflare would step out of the way and actually try to reach `192.0.2.1`, which would just hang. The orange cloud is the whole trick.
+
+Then I moved the nameservers. At Namecheap, where the domain is registered, I swapped from `registrar-servers.com` over to the two Cloudflare nameservers it handed me (`coen.ns.cloudflare.com` and `collins.ns.cloudflare.com`). Since DENIC had just verified the holder data, this went through without any fuss.
+
+## The redirect rule itself
+
+With the domain in Cloudflare and active, the redirect is one rule.
+
+In Rules, Redirect Rules, a new rule that matches the hostname, then sends it on:
+
+```
+When incoming requests match:
+    Hostname equals vinelabs.de
+    OR Hostname equals www.vinelabs.de
+
+Then:
+    Type: Dynamic redirect
+    Expression: concat("https://vinelab.in", http.request.uri.path)
+    Status code: 301
+    Preserve query string: ON
+```
+
+The `concat` is what keeps paths alive. Instead of dumping everyone on the homepage, it takes whatever path came in and sticks it onto `vinelab.in`. So `vinelabs.de/foo` becomes `vinelab.in/foo`, not `vinelab.in`. Preserve query string keeps the `?something=value` bits too. Little details, but they are the difference between a redirect that respects the link someone clicked and one that throws it away.
+
+Last bit, HTTPS. Under SSL/TLS I set the mode to Full and turned on Always Use HTTPS. Universal SSL issued a certificate for the apex and `www` on its own shortly after. So even a plain `http://` request gets forced up to `https://` and then redirected, with a valid cert the whole way. No browser warnings before the bounce.
+
+## Trust, but verify (with dig and curl)
+
+I was not going to write "it works" without actually watching it work. So, the checks.
+
+Nameservers first:
+
+```bash
+dig +short NS vinelabs.de
+# coen.ns.cloudflare.com.
+# collins.ns.cloudflare.com.
+```
+
+Delegation had propagated. Then the redirect itself, every case I could think of:
+
+```bash
+curl -sI https://vinelabs.de
+# 301 -> location: https://vinelab.in/
+
+curl -sI http://vinelabs.de
+# 301 -> location: https://vinelab.in/   (plain HTTP forced up and redirected)
+
+curl -sI https://www.vinelabs.de/foo?x=1
+# 301 -> location: https://vinelab.in/foo?x=1   (path and query both preserved)
+```
+
+Every case behaved. Apex and `www`, both HTTP and HTTPS, path carried through, query string carried through, and the `server: cloudflare` header confirming it was all happening at the edge and never at some origin. The `https://` calls completing at all told me the certificate was real, because curl would have failed the handshake otherwise.
+
+That is the full chain working. A German domain that spent a while blocked over holder data, now quietly forwarding every request to `vinelab.in`, and not a single server involved in doing it.
+
+## What I actually took away from this
+
+Two small things stuck with me.
+
+One, owning a `.de` from outside Germany comes with a verification step that can freeze the domain, and there is nothing you can do to rush it. It is not a bug and it is not personal. DENIC just wants to know the holder is real. Once that clears, the domain behaves like any other. Knowing that ahead of time would have saved me some quiet worrying.
+
+Two, a redirect does not need a server. The reserved dummy IP plus an orange cloud plus one rule is enough to forward an entire domain, forever, for free, with valid TLS and no box to maintain. I keep being a little surprised by how much you can do at the edge with nothing running behind it.
+
+And the domain I waited on? It is a signpost now. Points at `vinelab.in` and gets on with its life. Sometimes the anticlimactic ending is the correct one.
+
+That is all I had on this one. If you made it till here, thank you, genuinely. See you in the next one, where I will probably be complaining about something else that broke.
