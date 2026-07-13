@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.58](https://github.com/vineethkrishnan/portfolio/compare/v0.0.57...v0.0.58) (2026-07-13)
+
+
+### Features
+
+* **projects:** add WeSpend as the lead project card ([#123](https://github.com/vineethkrishnan/portfolio/issues/123)) ([b10f3dd](https://github.com/vineethkrishnan/portfolio/commit/b10f3dd9db6baaf9d4e2d5892be2b1bdb4a8a3bb))
+
 ## [0.0.57](https://github.com/vineethkrishnan/portfolio/compare/v0.0.56...v0.0.57) (2026-07-07)
 
 
