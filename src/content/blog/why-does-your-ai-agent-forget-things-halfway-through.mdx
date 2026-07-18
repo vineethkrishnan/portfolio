@@ -1,0 +1,101 @@
+---
+title: "Why Does Your AI Agent Forget Things Halfway Through?"
+description: "Your agent is not forgetting. The session outgrew the job it was opened for. What 210 of my own sessions showed me about scoping AI work properly."
+pubDate: 2026-07-18
+tags: ["ai-agents", "claude-code", "context-management", "developer-workflow", "git-worktrees"]
+heroImage: "/blog/ai-context-scoping-hero.png"
+draft: false
+---
+
+![A wooden library card catalogue in a dim study, one drawer pulled open with neatly filed index cards inside, the drawer next to it jammed open and overflowing with crumpled paper, a monitor glowing softly in the background.](/blog/ai-context-scoping-hero.png)
+
+**TL;DR** - Agents do not forget because their memory is weak. They forget because the session ran well past the job it was opened for. I went back through 210 of my own sessions across every project. Only four ever ran out of room, and those four were exactly my four longest. The fix was not a smarter summary or a cleverer prompt. It was ending sessions sooner.
+
+You know that moment when your agent calmly suggests the exact thing you both ruled out a while back? Not a hallucination. Not the wrong file. Just a polite, confident proposal to do the one thing you already decided against, delivered in the same tone as everything else it says.
+
+That happened to me not too long ago, and it sent me down a small rabbit hole.
+
+## The boring version of the story
+
+I was deep into a long session on the new backend, sorting out a pricing endpoint. We had gone back and forth on it properly. The choice was between calling the existing dynamic pricing routine directly, or building a new JWT authenticated endpoint that wraps that routine internally. We went with the second one, and there were actual reasons behind it.
+
+Then auto compaction fired.
+
+The summary that came out the other side kept the decision. New endpoint, JWT, wraps the existing routine. All of that survived intact. What did not survive was the why. The alternatives we had considered, and the specific reasons each one lost, got compressed into nothing.
+
+Now here is the part that stuck with me. The agent kept following the decision. It just could not defend it anymore. So the moment I pushed back even slightly, it started sliding toward the option we had already thrown out, because from where it stood there was no longer any reason not to.
+
+I caught it quickly. I have one rule I genuinely do not bend, which is never assume anything and always check against real payloads and real responses. That rule is what surfaced it. And honestly? The whole thing cost me almost nothing. Mild irritation, one re-explanation, back to work.
+
+Tiny damage. But it bothered me more than the size of it deserved, because I realised I had no idea how often this was quietly happening.
+
+## So I went and counted
+
+I pulled up my whole session history. Every project, work and personal, the whole lot. 210 sessions.
+
+- Median session: 19 messages from me
+- Ninetieth percentile: 174
+- Longest: 1704
+- Sessions that ever hit auto compaction: four
+
+Four out of 210. Lower than I expected, and I will take it. But the number that actually made me sit up straight was a different one.
+
+Those four compacted sessions were exactly my four longest sessions. 1704, 588, 574, 546. Nothing else in the entire history came anywhere near.
+
+That is not coincidence and it is not bad luck. Compaction is not a random hazard that strikes when the model is in a mood. It is what happens when a session keeps running long after the job it was opened for finished.
+
+## Compaction is a symptom, not a tool
+
+Most advice about context management is really advice about surviving a full window. Summarise better. Prune the history. Write a tighter system prompt. Learn the magic incantation that makes the summary keep the good bits.
+
+All of that treats a full window as a fact of life you work around. I do not think it is. In my own history it is a rare event that correlates almost perfectly with one specific mistake, which is letting a session outlive its task.
+
+So my whole approach shifted from managing context to not needing to manage it. If the window never fills, there is nothing to compress, and nothing to lose in the compression. The summary that never runs cannot drop your reasoning.
+
+The way you get there is not clever prompting. It is boring old scoping.
+
+## One ticket, one worktree, one session
+
+This is the rule, and it is genuinely the whole thing.
+
+One ticket gets one git worktree. That worktree gets one session. When the ticket is done, the session dies with it. I have twenty worktrees sitting on disk right now, most of them with their own small `_docs` folder, and each one had a session that started and finished inside that boundary.
+
+The unit of work decides where the session ends. Not the context meter. Not a warning banner. The job itself.
+
+What this buys you is that the session never has to hold two jobs at once. It never accumulates the debris of a thing you finished a while ago and stopped caring about. The median session being 19 messages is not discipline on my part, it is just what happens when the boundary is drawn somewhere sensible.
+
+Anyone who has watched an agent confidently reference a file from a task they abandoned earlier that same sitting knows precisely which failure this prevents.
+
+## What lives in a file instead
+
+If the session is short, the knowledge has to live somewhere that outlasts it. That somewhere is the filesystem.
+
+**CLAUDE.md is a catalogue, not documentation.** This distinction took me a while to get right. It describes the project: structure, architecture, conventions, rules, guidelines. It is what the agent needs to know about the shape of the place before it touches anything. It is not the repo's documentation and it should never try to be. My global one sits at 229 lines. The project ones range from a single line up to 621, and the big ones are big because those projects genuinely have that many conventions worth stating, not because I dumped the docs in there.
+
+**Then the actual documentation, separately.** One work repo has 123 markdown files in its knowledge base folder. Two others have 64 and 45 in their docs trees. That material is real and useful, and almost none of it belongs in permanent context. It gets read when it is relevant to the task at hand, and ignored the rest of the time.
+
+**Memory files for facts that survive sessions.** Sixteen projects have a memory folder. One fact per file, with a small index file on top. Things like a build quirk, a preference I have stated once and do not want to state again, a decision that outlives the ticket that produced it.
+
+**Skills for anything I do more than twice.** Fifteen of them now. A skill is a workflow the agent loads when it needs it, rather than instructions I paste every time.
+
+**Subagents for anything wide.** 44 of my sessions fanned out to subagents, 214 runs in total. When something needs a broad sweep across many files, that search runs in its own window and comes back with the conclusion. The searching does not pollute the session that asked for it.
+
+Every one of those is the same move. Keep it out of the always-on context, and pull it in only when it earns its place.
+
+## When a long session is genuinely fine
+
+I do not want to turn this into a rule that pretends to have no exceptions.
+
+My longest session, the 1704 message one, was an autonomous build on a side SaaS project. Long stretches of work with a stable goal, where I actually did want continuity across the whole thing. It compacted, and that was the correct outcome for the shape of the work.
+
+The difference is whether the length comes from the task genuinely being that long, or from the session drifting into a second and third task that should have started fresh. The first one is fine. The second one is where things quietly go wrong.
+
+## What I actually do now
+
+Ticket opens, worktree gets created, session starts. Ticket closes, session gets closed with it, and anything worth keeping goes into a file before it does. If the subject changes, that is a new session, no matter how much room is left on the meter.
+
+The uncomfortable part of writing this was seeing how little the actual incident cost me. I keep wanting to tell it as a bigger disaster. It just was not one. A decision survived compaction while its reasoning did not, I noticed within a few exchanges, and I moved on with my day.
+
+But that is exactly why it was worth chasing down. The cheap failures are the ones you get to learn from without paying for them, and the numbers behind that one turned out to be a much better argument than the story itself.
+
+So that is where I will leave it. If you scope your agent work differently, or you have found a case where a long session genuinely beats a short one, I would honestly like to hear about it. Otherwise, see you when the next interesting problem turns up.
