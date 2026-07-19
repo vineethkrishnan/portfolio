@@ -1,0 +1,124 @@
+---
+title: "The image model that only runs on Apple silicon"
+description: "Ollama can generate images locally now. I pulled the model on my Ubuntu box and got an MLX error instead of a picture. Here is why no amount of reinstalling was ever going to fix it."
+pubDate: 2026-07-19
+tags: ["ollama", "mlx", "apple-silicon", "local-ai", "image-generation"]
+draft: false
+heroImage: "/blog/the-image-model-that-only-runs-on-apple-silicon-hero.png"
+---
+
+# The image model that only runs on Apple silicon
+
+![Photorealistic night desk scene, a silver MacBook Air on the left glowing with a freshly rendered neon street image on its screen, and on the right a dark rack-mount Linux server whose small monitor shows only a red terminal error line.](/blog/the-image-model-that-only-runs-on-apple-silicon-hero.png)
+
+> **TL;DR** - Ollama's image generation does not run on the llama.cpp engine. It runs on MLX, which is Apple's framework, which means Apple silicon only. Linux and Windows builds simply do not ship the library. The fix is not a fix, it is a different machine.
+
+So there I was, pretty excited. Ollama had shipped local image generation, I had a perfectly good Ubuntu server sitting there doing nothing much, and I thought this was going to be a nice evening. Pull a model, type a prompt, get a picture. How hard can it be.
+
+```bash
+ollama run x/flux2-klein "neon-lit street at night, photorealistic"
+```
+
+And what I got back was this:
+
+```
+Error: 500 Internal Server Error: mlx runner failed: Error: failed to
+initialize MLX: failed to load MLX dynamic library (searched:
+[/usr/local/lib/ollama /build/lib/ollama /dist/linux-amd64/lib/ollama
+/dist/linux_amd64/lib/ollama]) (exit: exit status 1)
+```
+
+My first reaction was the same as yours probably would be. Broken install. Missing package. Some library I forgot to apt-get. I was already mentally writing the `ldconfig` command.
+
+That was the wrong instinct, and it cost me a good bit of the evening.
+
+## Read the error properly, not emotionally
+
+Look at that error again. Really look at it.
+
+It is not saying "MLX is broken". It is saying it went looking for an MLX library in four different folders and found nothing. And one of those folders is literally named `dist/linux-amd64/lib/ollama`.
+
+That is the whole answer sitting right there in the path name. The Linux build of Ollama has a slot where the MLX library should go, and that slot is empty, because Linux builds do not ship one. There is nothing to install. There is no package. The thing I was looking for was never made for the machine I was on.
+
+Every dev who has spent an evening reinstalling something that was never installable is nodding right now.
+
+## What MLX actually is
+
+Here is the part I did not know, and it explains everything.
+
+When you run a normal text model on Ollama - your gemma, your llama, whatever - it goes through the usual engine that runs on basically anything. CPU, NVIDIA GPU, Apple GPU, does not matter much. That is the Ollama most of us know.
+
+Image models do not use that engine at all. They use a completely separate runner built on **MLX**, which is Apple's own machine learning framework. And Apple's framework talks to Apple's GPU through Metal. That is not a preference or an optimisation. It is the only thing MLX knows how to talk to.
+
+So it is not "Ollama does not support Linux image generation yet" in the sense of a missing feature. It is more like the feature was built on a foundation that only exists on one platform. Ollama's own announcement puts it plainly: image generation works on macOS, with Windows and Linux "coming soon". That post went up in January. It is July now and that sentence has not changed.
+
+## Proving it instead of trusting it
+
+I do not like taking a blog post's word for it, even an official one. So once I had Ollama installed on my Mac, I went digging into the app bundle to see whether the MLX story actually held up.
+
+```bash
+find /Applications/Ollama.app -iname "*mlx*"
+```
+
+And there it was:
+
+```
+/Applications/Ollama.app/Contents/Resources/mlx_metal_v3/libmlx.dylib
+/Applications/Ollama.app/Contents/Resources/mlx_metal_v3/mlx.metallib
+/Applications/Ollama.app/Contents/Resources/mlx_metal_v4/libmlx.dylib
+/Applications/Ollama.app/Contents/Resources/mlx_metal_v4/mlx.metallib
+```
+
+That `.metallib` file is the giveaway. Those are compiled Metal shaders - GPU code written in Apple's shading language, for Apple's GPU. There are two versions of it, `v3` and `v4`, because different generations of Apple chips want different Metal targets.
+
+You cannot ship that to Linux. There is no Metal on Linux to ship it to.
+
+The other small thing I noticed - on the Mac, `/usr/local/bin/ollama` is just a symlink pointing into the app bundle:
+
+```
+/usr/local/bin/ollama -> /Applications/Ollama.app/Contents/Resources/ollama
+```
+
+Which is a neat little detail, because it means the CLI and the app are the same binary. The Mac app is not a wrapper around a separate install. That is why installing the desktop app is enough, and why hunting for a Homebrew formula (which is what I tried first, obviously) is a dead end.
+
+## So what actually works
+
+On the Mac side, it just runs. My machine is an M4 Air with 24 GB, and the 4B model renders comfortably without the fans even getting interested. There are two models to know about:
+
+- `x/z-image-turbo` - 6B, from Alibaba's Tongyi Lab, Apache 2.0, good at photorealistic stuff
+- `x/flux2-klein` - from Black Forest Labs, comes in 4B (Apache 2.0) and 9B (non-commercial licence)
+
+I went with `flux2-klein:4b` because the licence is clean and it is fast.
+
+Now, one thing that tripped me up when I tried to script it. The CLI renders the image **inline in your terminal**. It looks lovely and it writes absolutely nothing to disk. Pipe it somewhere and you get nothing useful. So for anything automated, go through the HTTP API:
+
+```bash
+# note the field is "image", singular - I lost a few minutes to that one
+curl -s http://127.0.0.1:11434/api/generate \
+  -d '{"model":"x/flux2-klein:4b","prompt":"your prompt","stream":false,
+       "width":1216,"height":640,"steps":4}' \
+  | jq -r '.image' | base64 -d > hero.png
+```
+
+Two gotchas packed in there. The response field is `image`, not `images` - singular, which is the opposite of what every other image API has trained you to expect. And a full render takes a couple of minutes, so if you are calling this from any tool with a default timeout, raise it. Otherwise you get a mysterious empty file and start blaming the model.
+
+The hero image at the top of this post came out of exactly that command, by the way. Photorealistic, generated on the same laptop I typed this on, no API key, no credits, no upload.
+
+## The bit I actually want you to take away
+
+The lesson here is not about Ollama. Ollama will ship Linux support eventually and this whole post becomes a historical footnote.
+
+The lesson is that I spent an evening trying to fix an install that was not broken. And the information I needed to stop doing that was printed in the error message, in the first line, in a folder path that said `linux-amd64` right next to a thing called MLX. Two words I could have connected in about ten seconds if I had read instead of reacted.
+
+But no. Error appears, brain says "broken install", hands start typing `apt`. That reflex has saved me plenty of times, which is exactly why it is dangerous - it fires before you have actually looked at anything.
+
+Now when something fails on a machine, my first question is not "what is missing here". It is "was this ever supposed to work here at all". Different question. Much cheaper to answer.
+
+## Quick reference, if you landed here from the error
+
+- Getting `failed to load MLX dynamic library` on Linux or Windows? Nothing is broken. Image generation is macOS-only right now, there is an open issue for it (ollama/ollama#16876), and reinstalling will not help.
+- Have a Mac with Apple silicon? Install the desktop app, pull `x/flux2-klein:4b`, done.
+- Only have a Linux box with an NVIDIA card? Use ComfyUI or Hugging Face `diffusers` instead. Same models, different runner, actually supported there.
+- Text models are unaffected. Your gemma and llama setups on Linux are completely fine. This is an image-generation-only wall.
+
+That is where I will stop. If you have found a sensible way to run these image models on a Linux box without going the ComfyUI route, I would genuinely like to hear it - drop me a note. Otherwise, see you when the next interesting problem shows up.
