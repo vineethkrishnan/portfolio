@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.0.60](https://github.com/vineethkrishnan/portfolio/compare/v0.0.59...v0.0.60) (2026-07-18)
+
+
+### Features
+
+* **blog:** add post on scoping AI sessions instead of managing context ([#128](https://github.com/vineethkrishnan/portfolio/issues/128)) ([144b4ba](https://github.com/vineethkrishnan/portfolio/commit/144b4ba6af996c80f52b1ce352f70a90bfa9cf35))
+
+## [0.0.59](https://github.com/vineethkrishnan/portfolio/compare/v0.0.58...v0.0.59) (2026-07-13)
+
+
+### Features
+
+* **blog:** add post on the cron job that had no user ([#126](https://github.com/vineethkrishnan/portfolio/issues/126)) ([7e9121c](https://github.com/vineethkrishnan/portfolio/commit/7e9121c82a358f5798371ed1bbdc35b2d65507fb))
+* **blog:** add post on unblocking my .de domain and redirecting it ([#125](https://github.com/vineethkrishnan/portfolio/issues/125)) ([5ccb29e](https://github.com/vineethkrishnan/portfolio/commit/5ccb29e955201ac7ad642f7523d09315716a7863))
+
 ## [0.0.58](https://github.com/vineethkrishnan/portfolio/compare/v0.0.57...v0.0.58) (2026-07-13)
 
 
