@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.61](https://github.com/vineethkrishnan/portfolio/compare/v0.0.60...v0.0.61) (2026-07-19)
+
+
+### Features
+
+* **blog:** The image model that only worked on apple silicon ([#130](https://github.com/vineethkrishnan/portfolio/issues/130)) ([8b41993](https://github.com/vineethkrishnan/portfolio/commit/8b4199347fc6be300dc26463d5c748e6bf8f7c94))
+
 ## [0.0.60](https://github.com/vineethkrishnan/portfolio/compare/v0.0.59...v0.0.60) (2026-07-18)
 
 
