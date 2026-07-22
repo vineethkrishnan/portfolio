@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.62](https://github.com/vineethkrishnan/portfolio/compare/v0.0.61...v0.0.62) (2026-07-22)
+
+
+### Features
+
+* **blog:** add field guide to open source cold emails ([#132](https://github.com/vineethkrishnan/portfolio/issues/132)) ([da0cc08](https://github.com/vineethkrishnan/portfolio/commit/da0cc088fd78f9e44b380d85be6304eec9dc6e53))
+
+
+### Bug Fixes
+
+* **deps:** resolve high severity vulns flagged by trivy ([#133](https://github.com/vineethkrishnan/portfolio/issues/133)) ([42b261f](https://github.com/vineethkrishnan/portfolio/commit/42b261f17e28563145dcbb3bb3bb87b2d4558360))
+
 ## [0.0.61](https://github.com/vineethkrishnan/portfolio/compare/v0.0.60...v0.0.61) (2026-07-19)
 
 
