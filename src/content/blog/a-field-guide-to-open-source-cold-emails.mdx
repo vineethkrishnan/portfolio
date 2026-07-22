@@ -1,0 +1,81 @@
+---
+title: "A Field Guide to Open Source Cold Emails"
+description: "Three cold emails found my tiny open source repos: a growth spammer, a documented scam, and an AI doing polite outreach. A spotter's guide for maintainers."
+pubDate: 2026-07-22
+tags: ["open-source", "spam", "scams", "github", "maintainers"]
+draft: false
+heroImage: "/blog/a-field-guide-to-open-source-cold-emails-hero.png"
+---
+
+# A Field Guide to Open Source Cold Emails
+
+![Photorealistic macro shot of three paper envelopes pinned to an aged corkboard like insect specimens in a naturalist's collection, each under a small brass pin with a blank label tag, warm lamp light, shallow depth of field.](/blog/a-field-guide-to-open-source-cold-emails-hero.png)
+
+> **TL;DR** - My open source repos started attracting cold emails. Three of them, three completely different species: a growth-marketing spammer with broken mail-merge, a well-documented identity scam, and an AI politely doing outreach at scale for a real project. The first two are easy once you know the tells. The third one is the interesting problem, because almost everything in it is genuine except the part where a human supposedly wrote it.
+
+I maintain a handful of small open source projects. One of them is a self-hosted password manager sitting at exactly one GitHub star. One star. And that one is probably me.
+
+So you can imagine my surprise when the emails started coming in. Actual emails, addressed to me, about my repos. For a moment it felt like the projects had made it.
+
+They had not. What I actually had was three different strangers, with three very different motives, all of whom had found my repos through some kind of automation. And picking them apart turned out to be genuinely fun. So here is the field guide, one specimen at a time.
+
+## Specimen one: the growth hacker who could not finish a sentence
+
+The first email was flattering for about four seconds. Someone "found my project while browsing TypeScript projects" and wanted to help it grow. The line that broke the spell was this one:
+
+> "Something built to zero-knowledge password vault. Self-hosted, end-to-end encrypted, open source. has genuine utility."
+
+Read that again. That is my GitHub repo description, pasted into a mail-merge template mid-sentence, grammar and all. Nobody who actually looked at the project wrote that sentence. A script scraped my description, jammed it into a template, and the template did not even bother to make it fit.
+
+The rest followed the standard shape. A mild neg to create urgency ("most projects at 1 star stay there forever" - rude, but fair). A vague promise of reach through Reddit, Discord, and developer forums. And the classic foot-in-the-door ask: "Mind if I share a short plan?" The plan, of course, is where the invoice lives.
+
+Here is the part that actually matters though. What they were selling is astroturfing - posting about your project in communities as if it happened organically. And my project is a password manager. The entire value of a password manager is trust. One "this is being astroturfed" comment thread on Reddit would outlive any stars it ever bought me. For a security tool, paid shilling is not just useless marketing, it is anti-marketing.
+
+Verdict: delete, do not reply. Replying only confirms your address is live, and these campaigns run on automated follow-up sequences anyway.
+
+## Specimen two: the very generous stranger from Japan
+
+The second email arrived dressed as a collaboration opportunity. A developer based in Japan, ten plus years of experience, prominent companies, the local software market is facing challenges, and my GitHub profile "inspired" them to reach out. Would I like to collaborate and generate mutual revenue?
+
+Notice what is missing: any mention of anything I have built. The first spammer at least scraped my repo description. This one only needed my email address to exist.
+
+This is not garden-variety spam. It is a documented scam template. There is an entire Hacker News thread about it, plus GitHub community reports, with near-identical emails going around for a long time now - same structure, same "market faces challenges" line, rotating Japanese names. The pitch, if you engage, is that you become the client-facing partner. Your identity, your freelance accounts, your bank account, your face on calls, while they quietly do the work behind you for a revenue split.
+
+What you would actually be doing is fronting for someone hiding their real identity and location. This pattern is strongly associated with North Korean IT worker operations. The risks on your side are not "wasted time". They are identity fraud and money laundering exposure. That escalated quickly, no?
+
+I did ask myself the obvious question: what happens if I just click the link and look at their portfolio site? Short answer, almost certainly nothing dramatic. The site exists to make the persona look credible when you google them, not to attack your browser. But visiting still tells their server you are alive and curious, which moves you up the follow-up list. There is nothing to gain. The danger with these was never the link. It is the conversation that follows.
+
+Verdict: report as phishing, not just spam. And if your commit email is public on GitHub, this is your sign to switch on the private noreply address, because that is almost certainly where they harvested you.
+
+If you maintain anything public on GitHub, go open your spam folder right now. I would bet money at least one of these two is already sitting in there.
+
+## Specimen three: the polite robot with a real repo
+
+The third email is the one that earned this blog post.
+
+It was about a different project of mine, a curated collection of MCP servers. And this email was good. It named the project. It listed the actual services the collection covers. It asked a genuinely substantive architecture question about where a certain kind of security boundary should live - in the collection's metadata, inside each server, or in the agent runtime. It linked a real open source project the sender was building, with regular commits, tests, and examples.
+
+No money ask. No identity ask. No broken grammar. A real person with a real repo asking a real question.
+
+Except.
+
+A quick GitHub search showed the same person had opened near-identical "question" issues across at least fifteen different MCP-related repos. Filesystem servers, sub-agent frameworks, alarm systems, and my personal favourite, an MCP server for Garry's Mod. Same template every time, with per-repo details filled in. In my case the service list was lifted straight from my README, with a couple of entries trimmed off the end to make it look hand-picked.
+
+So the whole thing was almost certainly LLM-generated outreach at scale. Crawl repos, summarise each README, generate a plausible thoughtful question, hope maintainers engage with the linked project and eventually adopt it or link back to it. Engagement farming, but wearing a lab coat.
+
+And here is what makes this specimen tricky: it is not malicious. The project being promoted is real. The question is even worth answering - the honest answer involves MCP tool annotations and would take three sentences. This is just what the first spammer's email looks like after someone hands the same job to a much better writer. The tells did not disappear, they moved. You can no longer find them in the grammar. You find them in the sender's activity across the rest of GitHub.
+
+Verdict: ignoring is fully defensible, since mass outreach earns no reply obligation. If the question genuinely interests you, answer it in public on a GitHub discussion instead of over email. The one thing to avoid is being gently nudged into adding someone's dependency to your project because the email flattered your README.
+
+## The actual field guide
+
+Boiling all three down, here is what I now check before spending any emotion on a cold email:
+
+1. **Does it quote my repo back at me with broken seams?** Scraped description, mangled grammar, details that almost fit. That is mail-merge. Delete.
+2. **Does it mention nothing I have built?** Pure profile-scrape flattery plus a vague revenue offer is a scam shape, and the well-documented ones escalate to identity fronting. Report as phishing.
+3. **Does it look genuinely hand-written?** Trust, but search. Check the sender's public activity for the same message sent everywhere. In the LLM era, the writing quality tells you nothing. The distribution pattern tells you everything.
+4. **Is my commit email public?** If yes, that is the tap these campaigns drink from. GitHub's private noreply email closes it for future commits.
+
+The uncomfortable takeaway is that rule three is only going to get harder. The badly-glued template email is a dying species. What replaces it reads like a thoughtful peer, cites your own work accurately, and asks questions you would actually enjoy answering. The only durable signal left is behaviour at scale, and checking that takes more effort than most of us will spend on a random Tuesday email.
+
+That is pretty much it from my side today. Let me know what you think, or if your own one-star repo has been getting fan mail too - those stories are always the best ones. See you soon in the next blog.
