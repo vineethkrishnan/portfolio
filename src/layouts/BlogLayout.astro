@@ -297,6 +297,42 @@ const breadcrumbJsonLd = {
     font-style: italic;
   }
 
+  .blog-content :global(p.inset-figure) {
+    float: right;
+    width: 38%;
+    margin: 0.35rem 0 1rem 1.75rem;
+  }
+
+  .blog-content :global(p.inset-figure img) {
+    margin: 0;
+    width: 100%;
+  }
+
+  /* A float must never bleed past the section it belongs to. */
+  .blog-content :global(h2) {
+    clear: both;
+  }
+
+  @media (max-width: 640px) {
+    .blog-content :global(p.inset-figure) {
+      float: none;
+      width: 100%;
+      margin: 1.5rem 0;
+    }
+  }
+
+  .blog-content :global(.tldr) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   .blog-content :global(hr) {
     border: none;
     border-top: 1px solid var(--color-border);
