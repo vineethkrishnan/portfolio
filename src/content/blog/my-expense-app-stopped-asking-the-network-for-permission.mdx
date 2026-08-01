@@ -1,0 +1,138 @@
+---
+title: "My expense app stopped asking the network for permission"
+description: "No signal used to mean the expense simply did not save. Here is the write outbox I added, the ids I moved to the phone, and the one limit I had to admit in the manual."
+pubDate: 2026-08-01
+tags: ["react-native", "offline-first", "expo", "sync", "wespend"]
+draft: false
+heroImage: "/blog/my-expense-app-stopped-asking-the-network-for-permission-hero.png"
+---
+
+# My expense app stopped asking the network for permission
+
+![A phone on a warm wooden table showing an expense app with an entry just saved and no signal bars, a small stack of glowing cards queued behind it, a faint teal thread rising from the stack towards two other phones sitting out of focus. Cinematic realistic photo, moody warm lighting, teal accents.](/blog/my-expense-app-stopped-asking-the-network-for-permission-hero.png)
+
+> **TL;DR**: My household expense app used to fail the save outright when there was no network. So I moved writes into a persisted outbox that drains later, which made saving instant with or without signal. The queue was the easy part. The real work was making reads count the queued entries, generating ids on the phone so a record can be edited before the server has ever seen it, and telling apart "the request never left" from "the server said no". I also skipped the connectivity library on purpose.
+
+WeSpend is a small app I built for my house. One person puts money into a shared pot every month, everybody logs what they spend from their own phone, and at the end of the week it works out who owes whom.
+
+For a long time it had one rule I was not proud of. No network, no expense.
+
+You type the amount, you hit save, and it fails. Not queued somewhere quietly. Not kept in a corner for later. Just failed, and whatever you typed was gone.
+
+## Nobody adds the expense later
+
+![A hand holding a phone in a dim kitchen, the screen dark with a single red warning triangle and no signal bars, paper grocery bags and a wallet sitting blurred on the counter behind.](/blog/my-expense-app-stopped-asking-the-network-for-permission-failed-save.png "inset")
+
+That is the part which actually hurt.
+
+Think about when you add an expense. You are standing somewhere, bags in one hand, phone in the other, and you have maybe ten seconds of patience for this. The save fails. You tell yourself you will add it later.
+
+You do not add it later. Nobody adds it later. I built the app and even I do not add it later.
+
+So the money got spent, the entry never happened, and by the weekend the settlement was quietly wrong. Not loudly wrong, which would have been fine. Quietly wrong, which is much worse, because everybody looks at the number and believes it.
+
+An app that tracks money only works if people trust the total. And the total was only as good as the weakest network moment in the whole week.
+
+So the fix looked obvious. Save it on the phone, send it later. One evening of work, easy.
+
+It was not one evening of work.
+
+## Saving turned out to be the easy half
+
+The queue part was genuinely quick. A stored outbox, writes go in, something drains them in the background. Done.
+
+Then I switched off the network, saved an expense, and the app told me my budget had not moved at all.
+
+Which, fair enough. The budget was reading rows from the server. My expense was sitting in a queue that the read side had never heard about. Same problem in the history list. Same problem in the settlement, and the settlement is the entire point of the app.
+
+So the reads had to change too. Now every read takes the server rows and folds the queued operations on top before anything reaches the screen. An expense you saved with no signal counts against the budget, sits in your history, and shows up in the settlement exactly like one that synced days ago.
+
+That is the bit I did not see coming. Offline is not really a write feature. It is a read feature wearing a write feature's clothes.
+
+## The id has to come from the phone
+
+This one small decision quietly shapes everything else.
+
+If the server hands out the id, then your entry has no name until the server has seen it. And a thing with no name cannot be edited. Cannot be deleted either. You are just holding it and waiting.
+
+So creates now make their own id on the device, and every repository moved from an insert to an upsert on that id.
+
+Two good things came out of that one change.
+
+You can edit or delete a row that has never once reached the server, because it already has a name of its own.
+
+And if a create gets sent, the connection dies before the reply comes back, and the retry sends it again, the second one just lands on the same id. No duplicate. In an app where the whole family sees the same list, one grocery run counted twice is not a small bug. That is how you start an argument at home about money that was never actually spent.
+
+## Three edits, one request
+
+Once saving became instant, we all started doing what people naturally do. Put in a number, look at it, realise it was wrong, fix it. Then fix it again.
+
+Done naively, that is three requests standing in line, waiting to be replayed at the server, for one entry that only ever needed one.
+
+So the queued operations now fold into each other. An edit merges into the create or the edit sitting ahead of it. Delete something that never synced and the whole chain just disappears, because there is nothing at the server to go and delete.
+
+Fiddle with a form three times and it still costs exactly one request when the signal comes back. If you have ever watched a sync queue faithfully replay a pile of operations that cancelled each other out, you already know why I bothered.
+
+## "No network" and "no" are two different answers
+
+![A dark wet street splitting in two, one side blocked by a glowing red barrier gate, the other side holding a patient line of small glowing teal cards waiting in the rain.](/blog/my-expense-app-stopped-asking-the-network-for-permission-two-failures.png "inset")
+
+This is the part I got wrong on the first attempt, and it is the part that decides whether your queue is trustworthy or just a nice place for data to go missing.
+
+A request can fail in two completely different ways.
+
+One, it never left the phone. No signal, radio off, whatever. Nothing is wrong with the operation itself. Retrying later is exactly right.
+
+Two, it left, reached the server, and the server said no. Bad payload, household deleted, something genuinely broken. Retrying this forever is pointless, because the answer will be no every single time.
+
+So there is a check now that splits the two. A transport failure ends the drain immediately and everything stays queued with no attempt counted against it, because punishing an entry for the basement having no signal makes no sense. A real rejection from the server counts as an attempt, and after five of those the operation gets marked as blocked and shown to you in the app, with a retry button and a discard button.
+
+The rule I set for myself was simple. Nothing disappears silently. If the app cannot save something, you get told, and you decide what happens to it.
+
+An expense tracker that loses one entry without saying anything is worse than one that never worked at all. At least the broken one is honest.
+
+## I did not install a connectivity library
+
+The usual move here is to add a module that tells you when the network is back, and drain the queue on that signal. I skipped it.
+
+Two reasons, and honestly the second one mattered more to me.
+
+First, a failed request already tells you everything that check would have told you. If the send fails at the transport layer, you have no network. You just learned it without asking anyone. A reachability API is a second opinion on a question you already answered.
+
+Second, adding a native module to an Expo app means a proper store build. Skipping it meant the whole thing could go out over the air as a JS bundle, and everybody at home would get it by simply reopening the app. No sending an APK around, no explaining to four people why they need to install something again on a Sunday. Before publishing I checked the native surface for anything that had crept in, it came back empty, and it went out as an over-the-air update.
+
+So instead of a connectivity listener, the drain runs on three triggers. When you queue something. When the app comes back to the foreground. And on a timer while anything is still pending.
+
+Overlapping triggers were an obvious trap, so the drain holds on to its own running promise. A second trigger firing mid-drain joins the pass already running instead of starting another one and sending everything twice.
+
+## Then I asked myself, does this sync in a delay?
+
+Turned out to be a better question than I expected.
+
+When you are online there is no delay at all. Queueing writes to the store and starts the send on the same tick. The screen does not wait for it, which is what makes saving feel instant, but the request itself leaves right away.
+
+When you are offline, the answer was that timer. I had set it to twenty seconds, which sounded perfectly sensible while typing it and felt terrible while actually using the app. You come out of the basement, signal returns, and you sit there staring at a pending pill for what feels like ages. I brought it down to five.
+
+But the more useful part of that question was the answer I did not enjoy giving.
+
+There is no background sync. That timer is a JavaScript interval, and React Native slows or suspends those when the app is not in front of you, hard suspended on iOS. So if your phone finds signal while the app is closed in your pocket, nothing happens at all. The foreground trigger is what actually catches it the next time you open the app.
+
+The manual used to say the app "retries by itself", which is technically true and practically a lie. I changed it to say plainly that retrying happens while the app is open, and that a phone which gets signal back with the app closed will sync on the next launch with nothing lost.
+
+Writing down the limit you cannot fix is more useful than pretending it is not there. People will find it either way. The only thing you get to choose is whether they find it in your documentation, or in the one moment they really needed the app to have worked.
+
+## What I would tell myself before starting
+
+If you are about to make an app work without a network, the queue is not the project. Save your energy for the other three things.
+
+Reads have to know about queued writes, otherwise your app will lie to you in the calmest possible voice.
+
+Ids have to come from the device, otherwise you cannot touch your own entry until the server blesses it.
+
+And failures have to be sorted into "not your fault, try later" and "genuinely broken, please look at this", because putting both into one retry loop is exactly how data goes missing.
+
+The thing that made the app feel fast was not the sync engine at all. It was that saving stopped being a request to somebody else. It became a write to my own phone that happens to travel later.
+
+And the settlement at the end of the week is finally telling the truth, which was the whole point of building this thing.
+
+That is all I had on this one. If you made it this far, genuinely, thank you. See you in the next one, where I will most probably be complaining about something else that broke.
