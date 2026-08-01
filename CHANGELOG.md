@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.63](https://github.com/vineethkrishnan/portfolio/compare/v0.0.62...v0.0.63) (2026-08-01)
+
+
+### Features
+
+* **blog:** add offline-first sync post with inset image support ([#135](https://github.com/vineethkrishnan/portfolio/issues/135)) ([7fa4ad3](https://github.com/vineethkrishnan/portfolio/commit/7fa4ad3d55d83bf16251ee936aa76f9055158670))
+
 ## [0.0.62](https://github.com/vineethkrishnan/portfolio/compare/v0.0.61...v0.0.62) (2026-07-22)
 
 
