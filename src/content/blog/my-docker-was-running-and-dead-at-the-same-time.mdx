@@ -1,0 +1,211 @@
+---
+title: "My docker was running and dead at the same time"
+description: "docker ps said the daemon was gone. colima said it was already running and refused to help. Both were being honest, and the thing in between them had quietly died."
+pubDate: 2026-08-02
+tags: ["docker", "colima", "macos", "debugging", "developer-workflow"]
+draft: false
+heroImage: "/blog/my-docker-was-running-and-dead-at-the-same-time-hero.png"
+---
+
+# My docker was running and dead at the same time
+
+![A weathered wooden door standing alone on a workshop table, brass handle polished and inviting, the doorway opening into empty air. Behind it, through a large window, a warm-lit warehouse full of glowing shipping containers running perfectly fine.](/blog/my-docker-was-running-and-dead-at-the-same-time-hero.png)
+
+> **TL;DR**: One morning `docker ps` told me the Docker daemon was not running. `colima start` told me it was already running and did nothing about it. Both were correct. The virtual machine was healthy, the daemon inside it was healthy, and every one of my containers was quietly getting on with its life. What had died was the small bridge that carries the socket out of the VM and onto my Mac. The socket file was still sitting there looking completely normal. There was just nobody behind it. `colima restart` sorted the whole thing out.
+
+Some problems introduce themselves properly. A stack trace, a red line, an error code you can paste into a search box and find four hundred people who had the same evening.
+
+This one just gave me two answers and let me sit with them.
+
+## The morning
+
+I opened the terminal to bring up my local stack. First command of the day, muscle memory, nothing interesting.
+
+```bash
+docker ps
+```
+
+```
+Cannot connect to the Docker daemon at unix:///Users/me/.colima/default/docker.sock.
+Is the docker daemon running?
+```
+
+Fine. The Mac had been asleep. The VM probably went to sleep with it. I have seen this message often enough that my hands started typing the fix before my eyes finished reading the error.
+
+```bash
+colima start --cpu 4 --memory 4 --activate
+```
+
+And colima said:
+
+```
+WARN[0000] already running, ignoring
+```
+
+Ok, good. It is running. So let me try docker once more.
+
+Same error. Word for word.
+
+Two tools. Opposite answers. Both of them, as I found out later, completely honest with me. If your morning has ever opened with that exact flavour of confusion, you already know I was not getting to my actual work for a while.
+
+## The message that was true and useless at the same time
+
+![A small shop front at dusk, metal shutter rolled fully up, warm lights glowing inside, a hand-painted OPEN sign hanging on the glass door, and the counter behind it completely empty.](/blog/my-docker-was-running-and-dead-at-the-same-time-open-sign.png "inset")
+
+Think of a shop with the shutter rolled up and the lights on and an OPEN sign hanging on the door.
+
+The sign is not lying. Somebody genuinely opened that shop this morning. It is just that there is nobody at the counter, and you can stand there knocking as long as you like.
+
+That is roughly where I was. `colima status` also said running. Cheerful, confident, completely unhelpful:
+
+```
+colima is running using macOS Virtualization.Framework
+arch: aarch64
+runtime: docker
+docker socket: unix:///Users/me/.colima/default/docker.sock
+```
+
+It even tells you the socket path. The same socket path docker was complaining about. So I went and looked at the file, and the file was right there where it was supposed to be.
+
+The only slightly odd thing was the date on it. Days old. Which, at the time, meant nothing to me.
+
+## So I went inside the house
+
+At this point I stopped trusting anything the host was telling me and went in through the back door. If the VM is running, I can ssh into it and ask the daemon directly.
+
+```bash
+colima ssh -- sudo systemctl is-active docker
+```
+
+```
+active
+```
+
+Right. So the daemon is alive. Then let me see what it thinks it is doing.
+
+```bash
+colima ssh -- docker ps --format '{{.Names}}\t{{.Status}}'
+```
+
+Nine containers. All of them up. A postgres holding all my local data, an identity server, a mail catcher, the whole work stack, everything humming along like it was any other day.
+
+Nothing was broken. That was the genuinely funny part. My entire local environment was running perfectly well, it just had no idea I was outside trying to get in, and I had no idea it was in there.
+
+## The door that opened into nothing
+
+The next test is the one I should have run first, and it is the single most useful command in this whole story.
+
+Instead of asking docker to connect to the socket, ask the socket directly.
+
+```bash
+curl --unix-socket ~/.colima/default/docker.sock http://localhost/version
+```
+
+When things are healthy, that spits out a blob of JSON telling you the engine version, the API version, the architecture, all of it.
+
+That morning, it refused the connection.
+
+So now the picture was complete, and it was a strange picture. The file existed. The permissions were fine. The daemon on the other side was alive and well. And connecting to that file got me nothing at all.
+
+The socket had turned into a door standing on its own with no house behind it. Beautiful handle. Opens into air.
+
+## What had actually broken
+
+Here is the piece I did not properly understand until I went and read the logs.
+
+Colima runs Docker inside a small Linux VM using lima. The docker daemon lives in there and its socket sits at `/var/run/docker.sock`, inside the VM. But your `docker` command runs out here, on the Mac. Those two need to be connected somehow.
+
+The way lima does it is almost embarrassingly ordinary. It runs an ssh port forward. A background process called the hostagent keeps an ssh connection open into the VM and forwards the guest socket out to a file on your Mac. You can see it in lima's own logs if you go looking:
+
+```
+ssh ... -L /Users/me/.colima/default/docker.sock:/var/run/docker.sock -N -f
+```
+
+That is it. That is the whole magic. Your `docker ps` talks to a local file, that file is an ssh tunnel, and the tunnel ends at the real socket inside the VM.
+
+Which means there is a third thing in this system that can fail. Not the VM. Not the daemon. The tunnel between them.
+
+And that is exactly what had happened. The Mac had gone to sleep and woken up, the ssh forward died somewhere in that transition, and lima never rebuilt it. The socket file it had created stayed on disk, because nothing cleans that up. So the file survived as a kind of fossil of a connection that no longer existed. Dead sockets do not look dead. They look exactly like living ones.
+
+Anyone who has ever gone and physically checked that a file exists, seen it sitting right there, and felt more confused rather than less, is already nodding.
+
+## Why `colima start` was so unhelpful
+
+This part annoyed me more than the actual bug, and I think it is worth understanding.
+
+`colima start` checks one thing before it decides whether to do any work. Is the VM running? Yes? Then there is nothing to do here. Already running, ignoring.
+
+It does not check whether the daemon inside is alive. It does not check whether the socket forwarding survived. It answers the narrow question it was asked, correctly, and goes back to sleep.
+
+Which is fair enough, honestly. It never claimed to be a health check. But when you are standing there at the start of your day, "already running" reads as "everything is fine", and it very much was not.
+
+The gap between "the process exists" and "the thing actually works" is where a surprising number of bad mornings live. A service can be up and useless. A container can be healthy according to docker and returning errors to every real user. A cron job can run every day for months and quietly do nothing. Existence is the cheapest possible signal and we all keep treating it as proof.
+
+## The fix
+
+After all that, the fix is one line and it is a bit of an anticlimax.
+
+```bash
+colima restart
+```
+
+That tears the whole thing down and builds it back up, hostagent and forwards included. Not `colima start`, because start looks at the VM, shrugs, and leaves. Restart actually rebuilds the plumbing.
+
+Every container came back on its own, well before I finished my coffee, because they all have restart policies. Nothing was lost. The volumes live on the VM disk and that survives restarts perfectly happily.
+
+So here is the runbook I keep now, for the next time this happens, because it will happen again.
+
+**Step one, confirm it is the tunnel and not the daemon.**
+
+```bash
+colima status
+curl --unix-socket ~/.colima/default/docker.sock http://localhost/version
+```
+
+If status says running but the curl refuses, that is your answer. You can double confirm from inside if you want to be thorough:
+
+```bash
+colima ssh -- sudo systemctl is-active docker
+```
+
+If that says `active`, the daemon is fine and you are chasing the wrong thing by restarting anything docker-shaped.
+
+**Step two, restart.**
+
+```bash
+colima restart
+```
+
+**Step three, check.**
+
+```bash
+docker ps
+```
+
+And if restart ever hangs or does not fix it, the heavier version:
+
+```bash
+colima stop -f
+colima start
+```
+
+Last resort, kill the forwarding process by hand first and then start clean:
+
+```bash
+pkill -f 'limactl hostagent'
+colima start
+```
+
+Your data is safe through all of these.
+
+## The bit that stayed with me
+
+I lost a chunk of a morning to this, and the actual fix was a single word different from what I had already typed.
+
+What I keep coming back to is that nothing in this system misled me. Every tool told me the truth about the small piece it could see. Docker said it could not reach the socket, which was true. Colima said the VM was running, which was true. The daemon said it was active, which was true. Put all three truths together and you still get a completely wrong picture, because the one thing that broke was the space between them, and nothing in the setup was watching that space.
+
+That is most infrastructure debugging, in my experience. Not one component lying to you. Several components each answering a narrower question than the one you actually asked.
+
+So now when something says it is running, I try to ask a slightly ruder follow-up question. Not "are you there", but "answer me". A socket you can connect to. An endpoint that returns a body. A queue that actually hands you back the message you just put in. The shutter being up is not the same as somebody being at the counter, and it costs about one command to find out which one you are looking at.
+
+And with that, we are at the end. Thank you for sticking around till the last line, it genuinely means something. Until the next blog, take care and go check that something you assumed was working actually is.
