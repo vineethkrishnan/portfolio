@@ -1,0 +1,120 @@
+---
+title: "Every prompt I type is homework now"
+description: "I asked Claude to build me a prompt engineering coach. The curriculum was the obvious half. The hook that grades every prompt I type inside real work is the half that actually taught me something."
+pubDate: 2026-08-11
+tags: ["prompt-engineering", "claude-code", "hooks", "ai-workflow", "developer-habits"]
+draft: false
+heroImage: "/blog/every-prompt-i-type-is-homework-now-hero.png"
+---
+
+# Every prompt I type is homework now
+
+![An adult developer squeezed into a small wooden school desk with a laptop, while a tall retro robot teacher marks his screen with a big red grading pen](/blog/every-prompt-i-type-is-homework-now-hero.png)
+
+> **TL;DR**: I asked Claude to build a skill that would teach me prompt engineering. It built a proper little school: a curriculum, a grading rubric, a student record file. But the part that actually changed how I write prompts was not the classroom. It was a hook the skill installed, which logs every prompt I type and quietly grades the thin ones at the end of Claude's reply, inside real work, without me asking for it.
+
+Earlier today I fired a quick one-line request into Claude Code. Routine work, the kind of prompt you type without thinking. It did the job fine, and then, at the very bottom of the reply, it added a small section that rewrote my own prompt back to me. Properly structured. Goal, scope, output format, the works. Like a teacher handing back an essay with red ink on it.
+
+I built this. Voluntarily. On purpose.
+
+Let me explain how I ended up in a school I constructed around myself.
+
+## It started with a bad prompt, obviously
+
+A few weeks back, in the middle of some completely unrelated work, I asked Claude Code for something like this:
+
+> Build me a skill called coach-me-prompting. When I invoke it, Claude should act as my personal prompt engineering coach and train me to write better prompts over time.
+
+Reads perfectly reasonable, no? It sounds like a person who knows exactly what he wants. I certainly thought so when I sent it.
+
+The coach disagreed, because the first thing the finished skill did was grade the prompt that created it. The student record it wrote has this line in it, which I have now read many times:
+
+> person-ish, 5 invented decisions (location, format, persistence, grading, scope); worked only because executor defaults matched intent
+
+Five decisions I never stated. Where the skill should live. How lessons should work. How progress gets stored. How grading happens. What is even in scope. Claude invented all five, and the result matched what I wanted purely because its defaults happened to line up with the picture in my head. The coach called this "person-ish" prompting. As opposed to "machine-ish", which is what I claimed I wanted to be.
+
+## What it actually built
+
+The skill turned out more serious than I expected. There is a 10 module curriculum, from clarity and specificity up to loop engineering and evals. There is a grading rubric with 7 dimensions, each scored 1 to 5, with instructions to the coach that say things like "A 3 is a 3. Never inflate scores." There is a progress.md that tracks modules, weak spots, and every real prompt it has reviewed.
+
+And because I said I wanted to write prompts like specs, it set up a spec-first track built around one template:
+
+```
+GOAL:       what to achieve, and WHY - one sentence each
+CONTEXT:    facts the executor cannot know (files, versions, prior attempts)
+TASK:       imperative instruction(s)
+SCOPE:      what may be touched; what must NOT be touched
+OUTPUT:     exact format, shape, length (schema if parsed by code)
+EXAMPLES:   1-3 input->output pairs when behavior is subjective
+EDGE CASES: behavior when data is missing, ambiguous, or impossible
+VERIFY:     how the executor proves success
+```
+
+Every section either filled or explicitly waived. A silently missing section counts as a gap, same as a vague sentence. The curriculum even has a name for short prompts that pretend to be precise: "person-ish in a trench coat". I did not write that phrase. My own tooling wrote that phrase, about me.
+
+## The part I did not fully think through
+
+A curriculum only works if the student shows up. So the skill also did something sneakier. It added a UserPromptSubmit hook to my Claude Code settings. That hook fires on every single prompt I type, in every project, and does two things:
+
+```bash
+p=$(cat)
+
+# every real prompt goes into the log, slash commands skipped
+printf '%s' "$p" | jq -c 'select((.prompt | startswith("/")) | not)
+  | {ts: now | todate, session: .session_id, cwd: .cwd, prompt: .prompt}' \
+  >> ~/.claude/skills/coach-me-prompting/prompt-log.jsonl
+
+# and then it injects a standing instruction that tells Claude:
+# if this prompt was vague, do the task anyway, but end your reply
+# with a "Prompt coach" section that rewrites it as a proper spec
+```
+
+So there is no escaping it. I do not need to invoke the coach. The coach invokes itself. If my prompt was clear, nothing happens and I feel nothing. If my prompt was lazy, I get my answer, and then underneath it, a small graded rewrite showing me what I should have typed. Every vague prompt becomes a tiny lesson whether I asked for one or not.
+
+The log part is the quiet one, but it matters just as much. Every prompt, timestamped, with the folder I was in. The coach has an analyse mode that reads this log and reports whether I am actually improving, with my own prompts quoted back as evidence.
+
+## The receipts are not flattering
+
+I finally looked at that log before writing this. A few numbers, all from my own file.
+
+216 prompts collected, and a good number of them very short. Now, a chunk of those short ones are perfectly legitimate. A bare "continue" usually means I hit the usage limit mid-task and resumed the session once the window reset. The coach's own analyse mode knows this and excludes plain continuations from scoring, because they are dialogue, not instructions.
+
+The interesting ones are the short prompts that were actually carrying a task. "push it and make a PR" is a real instruction with real consequences, and it says nothing about which branch, what the PR description should contain, or whether to open it as a draft. It works because the session already holds that context. It works because the defaults happen to match what I had in my head.
+
+And that is exactly what the coach keeps circling in red. Not "this failed". It says: this succeeded for a reason you did not control. The day the defaults do not match, a thin prompt does not fail loudly with an error you can read. It quietly succeeds at the wrong thing, and you find out later.
+
+Count how many of your prompts today would still make sense to a stranger with no session history. That was the number that made me quiet.
+
+## The part that actually stuck
+
+Here is what I did not expect. The classroom and the hook teach at completely different rates, and it is not the classroom that wins.
+
+A lesson needs me to stop working, sit down, and answer an exercise properly. That time has to be carved out, and on a normal working day it competes with everything else that is already on fire. The hook needs nothing from me at all. It fires on prompts I was going to type anyway, and when one of them is thin, the answer comes back with that small graded rewrite at the bottom, showing the spec version of what I meant.
+
+Session after session, project after project, the shape of it starts sticking. I now catch myself mid-prompt thinking "what is the output format here" before hitting enter. Not always. But more than before, and I never scheduled a single minute for it.
+
+## Let it read the spec back to you
+
+There is one more habit that lifted the quality of what I get back, and this one needs no skill and no hook at all.
+
+However carefully I write a spec, it is still a one way message. I send it, work happens, and I find out what the model actually understood by looking at the result. If it read my scope differently than I meant it, I learn that after the files have already changed.
+
+Plan mode flips the order. The model reads the code, thinks the task through, and then tells me what it intends to do before touching anything. I get to look at that plan and say no, not that file, or you missed the migration, or that is the wrong direction entirely. Only after that does it start work.
+
+The useful part is where the corrections land. The gap between my spec and its plan is exactly where the invented decisions live. Those five decisions from the start of this post, the ones I never stated and Claude quietly filled in anyway, would have shown up as plain lines in a plan I could read, instead of as surprises in a diff.
+
+You can start a session in it with `--permission-mode plan`, or cycle into it mid session with shift+tab. I do not use it for everything. For a typo fix it is a wasted round trip. But when the task touches a lot of files, or when being wrong means undoing an afternoon of work, reading the plan first costs a minute and saves the whole detour.
+
+So the two halves fit together nicely. Plan mode catches the wrong assumption before the work happens. The coaching hook tells me afterwards which vague line in my prompt let that assumption in. One saves the task, the other saves the next prompt.
+
+## If you want this for yourself
+
+The pattern is small and very copyable, and none of it is specific to my setup:
+
+1. **A skill** holds the knowledge: the curriculum, the rubric, the template. This is the part that knows what good looks like.
+2. **A hook** does the enforcement: it fires on every prompt, so the teaching happens inside real work instead of in a separate practice session that has to fight the calendar for a slot.
+3. **A log** keeps the evidence: a jsonl file of everything you typed, so "am I improving" becomes a question with an answer instead of a feeling.
+
+The honest lesson for me was not really about prompting. It was about where learning has to sit to survive a busy week. A curriculum teaches me when I show up for it. A hook teaches me whether I show up or not, and that difference turns out to be the whole thing.
+
+So that is where I will stop. If you have built something like this for your own habits, a linter for your behaviour instead of your code, I genuinely want to hear how it went - drop me a note. Otherwise, see you when the next interesting problem shows up.
