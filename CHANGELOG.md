@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.64](https://github.com/vineethkrishnan/portfolio/compare/v0.0.63...v0.0.64) (2026-08-11)
+
+
+### Features
+
+* **blog:** add post on the prompt coach hook that grades every prompt ([#138](https://github.com/vineethkrishnan/portfolio/issues/138)) ([7da366b](https://github.com/vineethkrishnan/portfolio/commit/7da366be7e1f08d48d32305b13a1294021cffaed))
+
 ## [0.0.63](https://github.com/vineethkrishnan/portfolio/compare/v0.0.62...v0.0.63) (2026-08-01)
 
 
