@@ -1,0 +1,187 @@
+---
+title: "327 days of uptime was the bug"
+description: "A power cut forced the first reboot in 327 days. A Redis unit someone disabled years ago never came back, and PHP workers started eating a gigabyte of memory per second with memory_limit at 128M."
+pubDate: 2026-08-18
+tags: ["incident", "postmortem", "php", "redis", "linux", "ops"]
+draft: true
+heroImage: "/blog/327-days-of-uptime-was-the-bug-hero.png"
+---
+
+{/* DRAFT NOTE - NOT PART OF THE POST: Get manager/team-lead approval before publishing - employer production incident. */}
+
+# 327 days of uptime was the bug
+
+![Flat editorial illustration of a dark data center aisle, rows of unlit server racks, one rack in the center glowing hot red with blue liquid overflowing out of it and pooling on the floor, a small red toggle switch beside it flipped off.](/blog/327-days-of-uptime-was-the-bug-hero.png)
+
+> **TL;DR**: A power event at our provider killed two production servers mid-log-line. The database box needed one button. The web box needed 10.5 hours, because a `redis-server` unit had been sitting `disabled` in systemd for years while the process ran happily by hand, and 327 days of uptime meant nobody ever found out. On the first boot in a year, sessions had no store, every request died inside `session_start()`, and each PHP worker leaked about a gigabyte of native memory per second with `memory_limit` set to 128M the entire time. The fix was two commands. Getting to those two commands was the whole story.
+
+Two servers stopped at the same second.
+
+Not "went unhealthy". Not "started throwing 500s". Stopped. Both boxes wrote a log line, and then the log file just ends, mid-sentence, like someone pulled the page out of the book. No shutdown sequence. No kernel panic. No OOM killer doing its thing. Nothing.
+
+When two independent machines in the same rack die at the exact same second, you can stop suspecting your code. Software is not that punctual. The evidence pointed at a power event on the provider side, and the ticket for that is still open at the time of writing.
+
+That was Sunday, just before midnight. Here is the genuinely embarrassing part.
+
+## Nobody noticed for seven hours
+
+We had monitoring. What we did not have was anything that could wake somebody up.
+
+The APM was doing its job perfectly, faithfully drawing a beautiful graph of traffic falling to zero and staying there all night, and paging exactly zero human beings. And there was no external uptime check at all, because who needs one when you already have an APM.
+
+So the outage was found Monday morning in the least sophisticated way available: the app was down.
+
+That part, honestly, did not rattle me. Outages happen. Degraded performance happens. Most of the time I am on the box and have things back within minutes, and unless a customer goes looking at the incident page or reads the email, they never even know there was a wobble. Being the person who quietly recovers from a rare bad morning is, more or less, the job.
+
+What rattled me was the next step. I went to open a shell on the box through our access gateway, listed the cluster, and it came back with every single server we run on it, except two. Not unreachable. Not unhealthy. Not sitting there red. Just absent from the list, like they had never been part of it.
+
+I have recovered servers plenty of times. I had never watched two of them quietly drop out of existence.
+
+Seven hours of downtime, and the thing that finally raised the alarm was two missing rows in a list. No alert ever fired.
+
+Sit with that for a second, because it is the cheapest lesson in this entire post. A basic external uptime check with a phone number attached costs almost nothing and would have turned seven silent hours into a couple of minutes.
+
+## The certificate from 2023
+
+Before touching the provider console, we confirmed the box was actually dark and not just unhappy. Ping from home: 100% loss. TCP on 22 and 443: dead. The reverse tunnel the server itself maintains: gone. Three different vantage points, same answer.
+
+And then one probe came back weird. From a healthy sibling server inside the provider network, curl to the production domain did not time out. It answered. With a certificate that had expired in 2023.
+
+That is a genuinely upsetting thing to read at seven in the morning. For a moment it looked like the box was half alive and serving something ancient.
+
+It was not. That sibling box had an `/etc/hosts` entry pointing the production domains at itself, left there by past-us for some forgotten reason, and a standby nginx on that box was quietly serving a three-year-old certificate to anyone who asked. A ghost from an old migration, answering the door.
+
+If your probe gives you an answer that makes no sense, check what your probe actually resolved before you build a theory on top of it. `getent hosts` before `curl`, always.
+
+## The database took one button. The web box did not.
+
+Dedicated hardware, so recovery goes through the provider's control panel. Quick warning if you ever end up there in a hurry: the tabs that look like remote consoles are, on some providers, OS reinstallers. The button you want is the plain hardware reset. Read that panel twice when you are stressed, because the medicine and the loaded gun sit right next to each other in the same menu.
+
+The database server: one reset, clean InnoDB crash recovery, back and healthy and never a problem again. Zero data lost. That machine did its job.
+
+The web server booted too.
+
+And then it drowned.
+
+## The box that fills 125 GB in about a minute
+
+Within a few minutes of every single boot, the same thing:
+
+- load average around 550
+- RAM at 124 of 125 GB
+- swap completely full
+- SSH sessions dying mid-command, roughly one in three getting through
+- `htop` showing a blank screen, because the machine was too starved to even paint it
+
+You have to understand what debugging looks like in that state. You type a command. The characters appear on screen a second later, one at a time. You hit enter and maybe you get output, maybe the session just dies and you reconnect. Every piece of diagnosis in this story was collected in the gaps between dying shells.
+
+First theory, and honestly the obvious one: PHP-FPM was configured with 300 workers on a 125 GB box, and workers were sitting at about a gigabyte each. That maths does not work. So, restart FPM. Memory frees beautifully. About a minute later it is full again.
+
+Cap the pool to 100 workers. Full again, except now workers are at 1.2 GB each. The pool cap did not slow it down, it just made each worker fatter.
+
+If your first instinct reading that was to blame a runaway cron, hold onto that thought, because it was mine too.
+
+## The process that would not stay dead
+
+Stop cron. Twelve seconds later, a single PHP process appears using 9.6 GB.
+
+Kill it. It comes back.
+
+Kill it again, stop supervisord (which manages the queue workers), assume that is that. Another one appears, this time with parent PID 1, which is systemd's way of saying "I have no idea either, ask around".
+
+This is where a command earned its place in my permanent toolkit:
+
+```bash
+# who actually owns this mystery process? systemd knows, just ask it
+systemctl status <PID>
+
+# same question, different angle
+cat /proc/<PID>/cgroup
+```
+
+`systemctl status` with a PID instead of a unit name tells you which unit that process belongs to. It named the culprit instantly: a dedicated background service nobody had in mind, auto-starting at boot, respawning its worker every time we killed it.
+
+Lesson that cost us a good chunk of the morning: before you diagnose anything on a freshly booted box, park every spawner. Cron, supervisord, every custom systemd unit. They all wake up at boot and they will happily fight you for the RAM you are trying to measure.
+
+## memory_limit is 128M and the worker is 9 GB
+
+Second hardware reset. This time everything background is parked and FPM is capped at 40 workers. Forty. On 125 GB.
+
+Then we sat there running `free -h` and watching it climb between consecutive invocations:
+
+```
+13 GB -> 32 -> 50 -> 68 -> 88 -> 109 -> 124
+```
+
+Twenty gigabytes between two runs of the same command. It reads like a countdown in a horror movie, and it feels roughly the same.
+
+Now here is the number that finally broke the case open. PHP's `memory_limit` on that box was `128M`. It had been 128M the whole time, through every restart, every cap, every theory.
+
+Workers were at 3 to 9 GB each.
+
+A 128 MB limit and a 9 GB process are not a contradiction. They are a clue. `memory_limit` does not limit memory, whatever the name suggests. It limits the Zend allocator, which is what your PHP code and its arrays and strings go through. Extensions and native library code allocating below that layer are completely invisible to it. If your worker is orders of magnitude past its limit, the leak is not in PHP. It is under PHP.
+
+You can prove that without guessing:
+
+```bash
+# what is this process actually holding, and what kind of memory is it?
+cat /proc/<pid>/smaps_rollup
+
+# and what does it have open while it holds it?
+ls -l /proc/<pid>/fd
+```
+
+`smaps_rollup` came back with about 7 GB of `Private_Dirty` anonymous heap in a single worker. Anonymous means not file-backed, so it is not a giant file being mapped in. It is raw allocation.
+
+And the file descriptor list was spotless. `/dev/null` on stdio and three sockets. That is it. No open files, no temp file being written, nothing being read from disk. Meanwhile `SHOW FULL PROCESSLIST` on the database during a climb showed 140 connections, every last one of them sleeping.
+
+So: workers burning gigabytes of raw heap, not touching disk, not talking to the database. Whatever they were doing, they were doing it before any actual work started.
+
+## What does every request touch first?
+
+Sessions.
+
+Where do our sessions live? Redis.
+
+```bash
+redis-cli ping
+# Connection refused
+
+systemctl is-enabled redis-server
+# disabled
+```
+
+Disabled.
+
+Someone, years ago, disabled the unit and started the process by hand. Maybe a maintenance window, maybe a config change, maybe a Tuesday. The process ran fine. It kept running fine for 327 days, because the box was never rebooted, and a process that is already running does not care one bit what systemd thinks about it.
+
+Then a power cut forced the first boot in a year, systemd read the config it had been given, and did exactly what it was told: it did not start Redis.
+
+From there the chain writes itself. No session store, so every incoming request fatals inside `session_start()`. The failing session handler leaks native memory in the process, roughly a gigabyte per second per worker, below where `memory_limit` can see it. Multiply by the worker pool and 125 GB of RAM disappears in about a minute. The box thrashes, which kills SSH and every observability tool on it, which is why nothing on the box could tell us what was happening on the box.
+
+There was one more twist that I still find funny in a grim way. The fatal error handler read the session again while writing the error to our custom log engine. So the error handling for the broken session broke on the broken session. Recursive misery.
+
+The fix, after two and a half hours of that:
+
+```bash
+systemctl start redis-server
+systemctl enable redis-server
+```
+
+All 444 keys were sitting safely on disk the whole time, completely untouched. Two commands. That is the entire fix for the chaos above.
+
+We brought it back up carefully from there, warming the caches before opening the doors to a night's worth of queued-up retry traffic. Total elapsed from the power cut: about 10.5 hours. The power cut itself was not our fault. Most of the rest of it was.
+
+## What I am actually taking from this
+
+**Uptime is not a trophy, it is an unpaid bill.** 327 days of uptime means 327 days of never testing whether the machine can boot itself. A service that is running but disabled is a landmine that only a reboot can find, and reboots are exactly what a long-uptime box never gets. Go audit `systemctl is-enabled` for everything you depend on, right now, and compare it against what is actually running. Then schedule reboot drills on staging so the discovery happens on a Tuesday afternoon instead of at seven on a Monday morning.
+
+**`memory_limit` does not limit memory.** It limits the Zend allocator. Native code allocates underneath it and does not check in. When the numbers make no sense, `smaps_rollup` tells you what kind of memory it is, the fd list tells you what the process is holding, and between those two you usually know which layer to blame.
+
+**Size worker pools by memory, not by hope.** Max children times realistic worst-case RSS has to fit in RAM with room to spare. Ours assumed 400 MB workers forever and nobody re-checked that assumption for years.
+
+**Monitoring nobody reads is decoration.** We had an APM drawing a perfect picture of the outage all night. It just never told anyone. A graph that only works when a human happens to look at it is not monitoring, it is art.
+
+That last one is the one I keep coming back to. Everything else in this incident was a technical problem with a technical fix. The seven hours of nobody knowing was a choice we made by not making it.
+
+Okay, that is enough from me. If any of this saves you an hour on a bad morning, that is the whole point of writing it down. Until the next one, take it easy.
