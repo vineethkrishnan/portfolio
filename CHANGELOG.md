@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.66](https://github.com/vineethkrishnan/portfolio/compare/v0.0.65...v0.0.66) (2026-08-18)
+
+
+### Features
+
+* **blog:** publish the 327-day uptime outage post ([#142](https://github.com/vineethkrishnan/portfolio/issues/142)) ([0e63728](https://github.com/vineethkrishnan/portfolio/commit/0e63728ad7c793a77b615d14fc84c05fcf385c76))
+
 ## [0.0.65](https://github.com/vineethkrishnan/portfolio/compare/v0.0.64...v0.0.65) (2026-08-18)
 
 
