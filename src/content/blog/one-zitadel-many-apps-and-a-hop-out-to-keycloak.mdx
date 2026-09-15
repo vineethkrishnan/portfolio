@@ -1,0 +1,110 @@
+---
+title: "One Zitadel, Many Apps, and a Hop Out to Keycloak"
+description: "What I learned wiring several apps to one Zitadel and brokering out to a customer's Keycloak: two very different APIs, a PKCE toggle that does nothing, and a logout that cannot federate."
+pubDate: 2026-09-15
+tags: ["sso", "oidc", "keycloak", "zitadel", "identity", "multi-tenant"]
+draft: false
+heroImage: "/blog/one-zitadel-many-apps-and-a-hop-out-to-keycloak-hero.png"
+---
+
+# One Zitadel, Many Apps, and a Hop Out to Keycloak
+
+![A dark office corridor at night lined with heavy closed doors on both sides, each lit by a narrow strip of warm amber light, with a single small lit window at the far end of the passage.](/blog/one-zitadel-many-apps-and-a-hop-out-to-keycloak-hero.png)
+
+> **TL;DR**: One Zitadel in front of several apps, then one tenant federated out to a customer's Keycloak. Zitadel gives you two completely different surfaces for that and picking the wrong one costs days: the hosted login mints its own token and needs a user on its side, the intent API hands you the upstream's raw claims and stores nothing. Along the way I found a PKCE toggle that is accepted, stored, drawn in the console and read by nothing, and a federated logout that is not a missing setting but a code path that does not exist for OIDC providers.
+
+Every project I start grows the same folder. A users table, a password hash column, forgot-password email, session cookie, session expiry, session invalidation. Then somebody asks for "login with Google" and it grows again.
+
+Once is fine. By the fourth app in the same company you feel a bit silly, because now there are four password reset flows to keep patched and four places to switch off somebody who left.
+
+So you put one identity service in the middle and point everything at it. That part is not hard. It got interesting when a customer said they already have their own login system, their own Keycloak, and their people will be using that, thank you.
+
+## One place that knows who people are
+
+Zitadel's model takes a minute to sit right, mostly because "project" does not mean what you expect. An **instance** is the deployment, one hostname and one issuer. Inside it are **organizations**, which are your tenants, and an organization owns its users, its identity providers and its login policy. Separately there are **projects**, which group **applications**, and an application is the thing holding a client id and secret. The line worth remembering: **users belong to an organization, not to a project**.
+
+The thing that reads like a bug is inheritance. Organizations inherit instance defaults until they override them. So when I found `AllowExternalIDP` set to false at the instance level of a server whose entire job is federation, I assumed somebody had broken it. Nobody had. It is off at the instance on purpose, and you turn it on per organization, for the one tenant that needs it.
+
+Two objects then have to meet. The org gets a **login policy**, the switches for passwords, self-registration and external IdP. An **identity provider template** is created separately and then **linked** to that policy. Creating the provider is not enough. I have stared at a provider that existed, looked correct and did nothing, purely because nothing had linked it.
+
+For a tenant that should be SSO only, the policy ends up like this.
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Username password allowed | off | people authenticate upstream, not here |
+| Register allowed | off | no self signup |
+| External IDP allowed | **on** | the per-org override, instance default stays off |
+| Domain discovery | off | org and provider are chosen explicitly |
+| Force MFA | off | MFA is the upstream's job, no second enrolment |
+| Password reset | hidden | there are no local passwords to reset |
+| Unknown usernames | ignored | no account enumeration through the form |
+
+Every other tenant keeps password login untouched. That is the whole reason the org layer exists.
+
+## Two doors into the same building
+
+This is the part I wish somebody had told me on day one.
+
+Zitadel exposes two surfaces that look like one product. There are the **OIDC endpoints**, the normal `/oauth/v2/authorize` and `/token` that any OIDC library speaks. And there is the **v2 and management API**, the paths your backend calls as itself with a service token. One is called by a browser on behalf of a user, the other by your server on behalf of nobody. Mixing them up is the single biggest time sink in this whole exercise, and which one you pick changes your data model.
+
+**Door one, the hosted login.** Your app is an ordinary OIDC client. Browser hits authorize, Zitadel shows its login page, Zitadel brokers out to the upstream, Zitadel mints **its own** tokens for your app. Standard, works with any library you already trust. The catch is one sentence: Zitadel can only mint a token for a subject it holds. So this path requires a Zitadel user per person, automatic creation and automatic update both switched on, and now you have a second copy of every user to think about.
+
+**Door two, the intent API.** Your backend posts to `/v2/idp_intents` and gets back an authorize URL. The browser goes off and does the federation dance. Zitadel bounces to a success URL you supplied with an id and a token in the query string, your backend posts to `/v2/idp_intents/{id}` with that token, and the upstream response is handed over raw: the upstream subject, the full claim payload exactly as the customer's IdP sent it, and the upstream's own ID token.
+
+And nothing is stored. The retrieval call verifies the intent, returns the payload and creates no user. I did not take that on trust, I counted. After several successful federated logins the Zitadel organization still had **zero users**, while my application database had the new records sitting there.
+
+If you have ever been told "the user is not in the admin console" and gone looking for a bug, you can see where this leads. Federated users never appear in the identity server at all. Support looks in the app, blocking somebody is an app-side action, and that belongs in your runbook.
+
+![The intent retrieval response, showing idpId, the upstream userId, the upstream ID token, and the full rawInformation claim payload including a custom account-type claim and the standard OIDC address object.](/blog/one-zitadel-many-apps-and-a-hop-out-to-keycloak-intent.png)
+
+One more thing falls out of this, and it is what actually decided it for me. Door two hands you the **upstream** ID token, so you can end the upstream session yourself. Door one does not. More on that below, because it turned out not to be a preference.
+
+## Adding the second app, and the third
+
+Once the hub exists, the per-app work shrinks to a row in a table: the provider id, the issuer I expect in `iss`, the JWKS URL, the claim that classifies the user, the value this tenant accepts, the success and failure URLs, and the one base URL return paths may resolve against. Read on every login start, so swapping a customer's IdP is configuration and not a deploy.
+
+The schema lesson cost more than the table did. The existing identity map was keyed on the identity server's user id with a unique index on it, which is sensible right up to the moment you have an external subject to store and nowhere to put it. What works is a separate table with `unique (issuer, subject)`. The pair, not either half.
+
+## The hop out
+
+Now the customer's Keycloak.
+
+What I got wrong first is embarrassing because it is so simple. There are **two hops and two return URLs**, and only one of them is any of the customer's business. Hop one is their IdP returning to Zitadel, and the URL registered on their client is **Zitadel's** callback. That is the only URL you send them. Hop two is Zitadel returning to your app, registered on your side, internal. I sent the wrong one out once, in an email, and the confusion took a week to unwind.
+
+The nice part is that Zitadel's callback is **one URL for the whole instance**, identical for every provider, so you can hand it over before you have created anything at all. That takes the customer's lead time off your critical path.
+
+Then there is the discovery document, which is the real specification of what the customer can give you, whatever anybody wrote in a ticket.
+
+![A trimmed discovery document from the upstream IdP, showing the endpoints, scopes_supported including a custom account-type scope, an incomplete claims_supported list, the PKCE methods and the subject types.](/blog/one-zitadel-many-apps-and-a-hop-out-to-keycloak-discovery.png)
+
+Read `scopes_supported` as authoritative. Do **not** read `claims_supported` that way. It is routinely incomplete and will happily omit the custom claim the whole integration depends on, which sends people off writing emails asking for something already being delivered. Only a real token settles a claim question. And `subject_types_supported` listing `pairwise` quietly kills "we will just match on `sub`", because pairwise means the same person gets a different subject per client.
+
+One more that stung: the scopes go on the **provider template**. Zitadel builds the upstream authorize request from that field, so adding scopes in your own application achieves nothing. The provider is also created on the v1 management path, `POST /management/v1/idps/generic_oidc`. The v2 path you will instinctively reach for answers 405. Only the intent endpoints are v2.
+
+## Four things that cost me an evening each
+
+**A toggle that does nothing.** The provider payload takes a `usePkce` field. The API accepts it, the write model stores it, the console draws the checkbox. Then I read the code that turns a stored provider into a working one and the field is never passed along. Confirmed it too: the authorize URL Zitadel built had no `code_challenge` in it at all, and with the upstream client set to *require* PKCE the login died before anybody saw a password screen, with `Missing parameter: code_challenge_method`. Meanwhile the operations guide for the same product family tells you to enable PKCE wherever the customer IdP supports it. You can follow that to the letter and ship no PKCE. Tell me I am not the only one who has trusted a checkbox without reading what sits behind it.
+
+**The issuer has to be one string that resolves from two networks.** The IdP stamps its hostname into every token and the broker validates it, so your browser and the broker container both have to reach the IdP at the same host on the same port. Every usual escape hatch was shut on my machine: `host.docker.internal` did not resolve from the host, `localhost` inside the broker meant the broker, and that image is distroless so there is no shell to exec into and test connectivity. The fix is one name that works on both sides, a hosts-file alias plus the IdP on the same Docker network plus the container port set equal to the published port. And here is the part that hurts. Pin the IdP hostname the way every hardening guide tells you to and you break the whole thing. The setup that works leaves it dynamic.
+
+**A scope you did not request comes back as nothing.** Same user, same attributes stored at the IdP, valid signature both times, and one login has the address claims while the other does not. The whole difference was one word in the scope parameter, and nothing in any log says you forgot a scope. If your rule is "missing classification claim means hard reject" and you drop one scope from the template, you have just rejected every user in that tenant with no explanation anywhere. Keycloak has a quieter cousin of this: from version 24 it silently drops user attributes the realm has not declared in its user profile.
+
+**Federated logout is not a missing setting.** I went looking for the flag and found the function instead. The end-session path only reaches the federated-logout routine for one of the two session generations, and that routine returns immediately unless the provider is a SAML template. A generic OIDC provider can never satisfy it. There is no configuration under which an app logout reaches the upstream IdP, the code path does not exist. So the app keeps the upstream ID token from the intent response and calls the upstream's own end-session endpoint with `id_token_hint`. Ordinary RP-initiated logout, sent to the party that actually owns the session.
+
+Test that properly, in one browser, because the whole question is whether a cookie survives. Clear only your local session, start again, and you sail through without typing anything. That is what "local logout only" feels like to a user.
+
+A few smaller ones, since they all cost real time. Intent retrieval is **not** single use, I assumed the second call would fail and it returned 200, so your app has to enforce that itself. The intent token arrives as a **URL query parameter**, which means browser history and proxy logs. There is **no allow-list** on the intent success and failure URLs, so those come from server config and never from a request. And `PUT /users/{id}` on Keycloak is a full replace, so patching only the attributes wipes the name and email and the next login fails with "Account is not fully set up".
+
+## What I would do the same way again
+
+**Prove the logout first, not last.** It was the only mechanism in the design with no fallback, so it became build-order step one instead of a release gate. Find the thing that cannot be worked around and attack it before you write anything comfortable.
+
+**Read the source when a toggle looks too easy.** Two of the four traps above were stored configuration that no code reads. A config field is a promise made by a schema, not by the runtime.
+
+**Email is not identity.** I tested this instead of arguing about it: change a user's email at the IdP, log in again, and the subject comes back byte for byte identical. Key on the issuer and subject pair.
+
+**Run a negative control before you conclude anything from an error code.** One upstream returned HTTP 500 on every error path, including a request with no parameters and a deliberately fake client id. Every probe "proved" something and all of it was noise, until the control showed the 500 was a broken error template and not a broken realm.
+
+The central identity server was the easy half. What took the time was the seam where two vendors meet, and nearly all of it came down to the same thing: something was configurable but not implemented, or delivered but not documented, and the only way to find out was to run it and look.
+
+Not going to pretend this is a complete writeup, there are parts of it I am still not happy with. But if it saves one person the evening I lost to a checkbox that does nothing, it was worth putting down. See you in the next one.
