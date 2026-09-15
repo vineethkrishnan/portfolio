@@ -80,6 +80,10 @@ export default defineConfig({
   site: 'https://vineethnk.in',
   integrations: [mdx(), sitemap()],
   markdown: {
+    // Astro 7's markdown processor applies smart punctuation by default, which
+    // rewrites straight quotes and apostrophes in every post into curly ones.
+    // The posts are written in plain ASCII on purpose, so leave the text alone.
+    smartypants: false,
     rehypePlugins: [rehypeTagTldr, rehypeInsetImages],
   },
   vite: {
