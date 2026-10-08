@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.68](https://github.com/vineethkrishnan/portfolio/compare/v0.0.67...v0.0.68) (2026-10-08)
+
+
+### Features
+
+* **blog:** add post on recovering deleted dslr photos ([#147](https://github.com/vineethkrishnan/portfolio/issues/147)) ([1c10826](https://github.com/vineethkrishnan/portfolio/commit/1c10826864122fcb6e05ad60e68ba163bdb57576))
+
+
+### Bug Fixes
+
+* **deps:** override devalue, sharp and source-map-js to clear the failing trivy scan ([#148](https://github.com/vineethkrishnan/portfolio/issues/148)) ([83cb92f](https://github.com/vineethkrishnan/portfolio/commit/83cb92f63d1213cfe806e519473b801fc547f5ca))
+
 ## [0.0.67](https://github.com/vineethkrishnan/portfolio/compare/v0.0.66...v0.0.67) (2026-09-15)
 
 
