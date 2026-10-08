@@ -1,0 +1,101 @@
+---
+title: "My niece deleted every photo on my DSLR. I got them back."
+description: "One press of Delete All on my camera, one very quiet room, and a text-mode recovery tool on Ubuntu that saved the day. Then I built a friendlier one for the Mac."
+pubDate: 2026-10-08
+tags: ["data-recovery", "photorec", "macos", "swift", "side-project"]
+draft: false
+heroImage: "/blog/my-niece-deleted-every-photo-on-my-dslr-hero.png"
+---
+
+# My niece deleted every photo on my DSLR. I got them back.
+
+![A DSLR on a wooden table with its empty-card screen showing, beside a laptop recovering photos from the SD card.](/blog/my-niece-deleted-every-photo-on-my-dslr-hero.png)
+
+> **TL;DR**: My niece wanted to delete one photo she did not like on my DSLR and picked Delete All instead. PhotoRec on Ubuntu brought back almost every photo. It works great, but it is a text-mode tool with menus only a sysadmin could love, so I built VineLab ReGrow, a recovery tool for the Mac with a browser UI. Then a different drive taught me the less cute half of the story: sometimes nothing comes back, and a good tool should tell you that honestly.
+
+## One bad photo, one wrong option
+
+Let me be fair to my niece first. She is not a little kid pressing random buttons. She is old enough to handle a DSLR properly, and she usually does.
+
+That day she took a photo she did not like. Totally normal. Everyone has taken a photo they want erased from history immediately. So she went into the menu to delete that one photo.
+
+Camera menus, though, love to keep "Delete this one" and "Delete All" sitting right next to each other, with names that look almost the same when you are in a hurry. She picked the wrong one. The camera asked "are you sure?", and she said yes, because she was sure. Sure about deleting that one bad photo.
+
+The card had a lot more than one photo on it. Now it had none.
+
+If your stomach dropped a little just reading that, you already know the feeling I had.
+
+## Why "deleted" does not mean "gone" (most of the time)
+
+Here is the thing that saved me. When a camera deletes a photo, it usually does not wipe the photo itself. It only marks the space as free in the card's file table. The actual image bytes keep sitting there, quietly, until something new gets written on top of them.
+
+So the most important rule of photo recovery is very simple. **Stop using the card.** Do not take one more picture. Do not "just check" it on the camera. Every new photo is a chance to overwrite an old one.
+
+I took the card out and kept it aside like it was evidence in a court case.
+
+## PhotoRec on Ubuntu to the rescue
+
+I put the card into my Ubuntu machine and reached for [PhotoRec](https://www.cgsecurity.org/wiki/PhotoRec), the free recovery tool that comes with TestDisk. It does not care about the file table at all. It reads the raw card, sector by sector, looking for the starting bytes of known file types, like the header every JPEG begins with. When it finds one, it carves the file out.
+
+```bash
+# installs both testdisk and photorec
+sudo apt install testdisk
+
+# point it at the card, not the partition you love most on your laptop
+sudo photorec /dev/sdX
+```
+
+Then you go through its menus. Pick the disk. Pick the partition. Pick the filesystem type. Pick where to save. It is all text, arrow keys and Enter, and it looks like something from a computer lab in the late nineties.
+
+But it worked. Almost every photo came back.
+
+They came back with names like `f1234567.jpg` inside folders called `recup_dir.1`, because the original file names live in the very table the camera had cleared. I did not care at all. I would have accepted them named after vegetables. The photos were back, and that was the whole point.
+
+## The part where I thought about everyone else
+
+After the relief settled, one thought kept bothering me. I got lucky because I am comfortable in a terminal and happened to have a Linux box nearby. Most people staring at an empty memory card are not going to open a terminal and type `sudo photorec /dev/sdX`. And typing the wrong device name in that command is not a small mistake.
+
+My daily machine is a Mac. So I started looking at what recovery on macOS would look like for a normal person.
+
+## The twist: a different drive, a very different ending
+
+Some time later I had a USB drive with deleted photos and videos on it, and this time I was on the Mac. I expected a repeat of the DSLR story. It did not go that way, and I learned three things I did not know about macOS.
+
+**macOS writes to your drive behind your back.** The moment the drive was plugged in and mounted, Spotlight and the file event logger started writing to it. On a drive you want to recover, every write is a small risk. So step one was unmounting it before doing anything else.
+
+**Root is not really root.** I ran PhotoRec with `sudo` and it still failed with `Operation not permitted` on the raw device. That is macOS privacy protection, not file permissions. The terminal app needs Full Disk Access in System Settings before even root can read the raw disk.
+
+**Sometimes the data is simply gone.** PhotoRec scanned the whole free space and found zero files. I did not want to give up so fast, so I wrote a small scanner of my own for exFAT. On exFAT, deleting a file just flips one bit in its directory entry, so normally the name, size and starting location are still there. The scanner found exactly one deleted entry on the whole drive, a Spotlight temporary file. The records for the photos had been reused, and a big chunk of the free space was all zeros.
+
+Nothing came back. Not one photo.
+
+That one stung. But it also showed me what was missing. Every tool I used either found files or printed nothing. None of them told me *why* nothing came back, or whether there was anything else worth trying.
+
+## So I built VineLab ReGrow
+
+ReGrow is the tool I wanted on both days. You point it at a USB drive, memory card, or external disk (exFAT, FAT32 or NTFS), and it does a read-only scan. It never writes to the disk it is recovering from. It even refuses to restore files onto the same disk, because that is exactly how you overwrite the thing you are trying to save.
+
+It has a command line for people like me, and a local web UI for everyone else:
+
+```bash
+brew install vineethkrishnan/tap/regrow
+
+regrow devices        # what is plugged in, and what kind of scan fits it
+regrow ui             # browse, preview and restore from the browser
+```
+
+The web UI runs only on your own machine, on `127.0.0.1`, and makes no network calls. Your family photos stay your family photos.
+
+The part I care about most is that every file it finds gets a status: recoverable, partial, fragmented, overwritten, zeroed. Each one comes with a reason. After a restore, it checks that the JPEGs, PNGs, videos and PDFs actually open, and gives you a report. If the answer is "sorry, this is gone", it says so, and it says why. That honesty would have saved me a lot of second-guessing on the USB drive day.
+
+And the name? I spent more time on it than I would like to admit, even trying a version built around my son's name. In the end I went with ReGrow. You lost something, and it grows back. Felt right for a lab called VineLab.
+
+## What I would tell you before you need it
+
+- **Stop using the card or drive the moment you notice.** This matters more than which tool you pick.
+- **Recover to a different disk.** Never onto the one you are scanning.
+- **On a Mac, unmount it first** so Spotlight does not start scribbling on it.
+- **Files deleted from your Mac's internal SSD are a different story.** TRIM erases freed blocks and FileVault encrypts what is left, so carving does not work there. Your real safety net is the Trash and Time Machine. Turn Time Machine on today. I am serious.
+- **Memory cards are cheap. One wrong menu option is cheaper.** Keep a second copy of anything you would cry about.
+
+Okay, I am going to stop here and go check that my own backups are actually running. If a tool like this ever pulled your photos back from the edge, or failed you at the worst moment, I would like to hear that story. Until the next one, keep an eye on whoever is holding your camera.
