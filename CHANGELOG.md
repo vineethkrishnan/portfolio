@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.67](https://github.com/vineethkrishnan/portfolio/compare/v0.0.66...v0.0.67) (2026-09-15)
+
+
+### Features
+
+* **blog:** add post on central auth with Zitadel and Keycloak federation ([#144](https://github.com/vineethkrishnan/portfolio/issues/144)) ([4bcb47b](https://github.com/vineethkrishnan/portfolio/commit/4bcb47bfa87aaddfd6d9b05aeec1823c1c18b671))
+
+
+### Bug Fixes
+
+* **deps:** upgrade to astro 7 to clear the failing trivy scan ([#145](https://github.com/vineethkrishnan/portfolio/issues/145)) ([95ecfa5](https://github.com/vineethkrishnan/portfolio/commit/95ecfa53a95692530bac48c6996d4c1059e96bc4))
+
 ## [0.0.66](https://github.com/vineethkrishnan/portfolio/compare/v0.0.65...v0.0.66) (2026-08-18)
 
 

@@ -1,7 +1,7 @@
 {
   "name": "portfolio",
   "type": "module",
-  "version": "0.0.66",
+  "version": "0.0.67",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -33,7 +33,9 @@
   "overrides": {
     "esbuild": "^0.28.1",
     "vite": "^8.0.13",
-    "sharp": "^0.35.4",
-    "nanoid": "^3.3.17"
+    "sharp": "^0.35.5",
+    "nanoid": "^3.3.17",
+    "devalue": "^5.9.3",
+    "source-map-js": "^1.2.2"
   }
 }
