@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.69](https://github.com/vineethkrishnan/portfolio/compare/v0.0.68...v0.0.69) (2026-11-11)
+
+
+### Features
+
+* **blog:** add post on tuning colima instead of paying for orbstack ([#150](https://github.com/vineethkrishnan/portfolio/issues/150)) ([7cdb41d](https://github.com/vineethkrishnan/portfolio/commit/7cdb41dda62e3eb1e7a8ea623dcda1ce228e99cc))
+
+
+### Bug Fixes
+
+* **blog:** rename orbstack post slug to match its title ([#153](https://github.com/vineethkrishnan/portfolio/issues/153)) ([2d78973](https://github.com/vineethkrishnan/portfolio/commit/2d78973e62516d742b8893d9cf3e26cd6f294e1b))
+* **ci:** syndicate blog posts to dev.to only after a release deploys ([#154](https://github.com/vineethkrishnan/portfolio/issues/154)) ([706a915](https://github.com/vineethkrishnan/portfolio/commit/706a91545e99f10b82103a99e567a968639850e0))
+* **deps:** override undici and vite, pin playwright jobs to ubuntu 24.04 ([#151](https://github.com/vineethkrishnan/portfolio/issues/151)) ([e92f212](https://github.com/vineethkrishnan/portfolio/commit/e92f212cf4eacc852d81d3a5ed93ceac25c0786b))
+
 ## [0.0.68](https://github.com/vineethkrishnan/portfolio/compare/v0.0.67...v0.0.68) (2026-10-08)
 
 
