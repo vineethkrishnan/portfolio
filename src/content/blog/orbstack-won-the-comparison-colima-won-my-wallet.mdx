@@ -1,0 +1,286 @@
+---
+title: "OrbStack needs a licence for work, so I tuned Colima itself"
+description: "I wanted to try OrbStack, but it needs a paid licence for work use. So I stayed on Colima and tuned it: x86 containers 5x faster and 28 GB back."
+pubDate: 2026-11-11
+tags: ["docker", "colima", "orbstack", "macos", "apple-silicon"]
+draft: false
+heroImage: "/blog/orbstack-won-the-comparison-colima-won-my-wallet-hero.png"
+---
+
+# OrbStack needs a licence for work, so I tuned Colima itself
+
+![A South Indian developer at his desk, torn between a glowing OrbStack window showing a price tag and a humble Colima terminal with a toolkit of wrenches beside it.](/blog/orbstack-won-the-comparison-colima-won-my-wallet-hero.png)
+
+> **TL;DR**: I wanted to move from Colima to OrbStack. OrbStack needs a paid licence for work use, and my containers are mostly for work, so I stayed on Colima and tuned it. Rosetta made x86 containers about 5x faster, a careful prune gave back 28 GB on the Mac, and I cleaned up what an old OrbStack install had left behind. All the commands are below.
+
+## How I got here
+
+I started with Docker Desktop, like most people on a Mac. It was eating a lot of CPU and memory, even when I was not running anything heavy, and the whole machine felt it. The fan was running more than my containers.
+
+I was not the only one. People reported the [VM service sitting at 90% CPU with no container running](https://github.com/docker/for-mac/issues/7643), [`com.docker.krun` taking close to 10 GB of RAM for one container](https://github.com/docker/for-mac/issues/7749), and [CPU spikes that made even the browser lag on an M1](https://github.com/docker/for-mac/issues/7839).
+
+So I moved to [Colima](https://github.com/abiosoft/colima), and that was a good decision. Colima is a small Linux VM and a CLI. No GUI, no extensions marketplace. CPU and memory go in one YAML file, and `colima stop` gives the CPU and memory back to the Mac when I do not need it. It is MIT licensed also, so there is no pricing page.
+
+Small side note: Docker Desktop itself is [free only for small businesses](https://www.docker.com/pricing/faq/), fewer than 250 employees and less than $10 million in yearly revenue. Bigger companies need a paid subscription. Keep that in mind, licences come back later in this post.
+
+So Colima was working fine. Nothing was broken.
+
+But I like trying new things. When a new tool shows up, I read about it first, and if it gives me a promising impression, I try it out.
+
+[OrbStack](https://docs.orbstack.dev/) is one of those tools I kept reading about. What caught my eye was how it handles files and resources. The docs talk about two-way file sharing on a tuned VirtioFS, starting in 2 seconds, and memory that is taken only when needed and given back to macOS when it is not. Since I restart containers all day, that sounded good to me.
+
+So I thought, why not give it a proper try.
+
+My setup is an Apple M4 with 24 GB of RAM, running Colima with the Docker runtime. On a normal day it runs four compose projects and seventeen containers for my day job, plus some side projects.
+
+I had actually installed OrbStack once before, a while back, and removed it. Why, I do not remember. "Just testing, no reason" is the honest answer.
+
+This time I wanted to do it properly. Check what I have, check what OrbStack gives, then switch.
+
+## What OrbStack gives
+
+OrbStack's own [comparison page against Colima](https://docs.orbstack.dev/compare/colima) is mostly ticks on its side and crosses on Colima's:
+
+- **[Dynamic memory](https://docs.orbstack.dev/efficiency).** The VM takes RAM when it needs it and gives unused memory back to macOS. Colima gives the VM a fixed size, 8 GiB in my case, and the comparison page marks dynamic memory as missing in Colima.
+- **[Two-way file sharing](https://docs.orbstack.dev/docker/file-sharing).** Colima does it one way. The docs also suggest volumes over bind mounts for the best speed, which is good advice for any Docker setup on a Mac.
+- **[Container domains](https://docs.orbstack.dev/docker/domains) and [automatic HTTPS](https://docs.orbstack.dev/features/https).** Every container gets a name like `container-name.orb.local`, with a local CA and certificates set up for you. No `/etc/hosts` edits.
+- **Fast x86 emulation through Rosetta.** The page marks Colima's Rosetta support as "Experimental".
+- **Fast startup, low CPU and power use**, and a native Mac app. Colima has no app at all.
+
+It is the vendor's own page, but each point has its own docs page behind it. It is a strong list, and I was more or less ready to switch.
+
+Then I opened the pricing page.
+
+## The licence page
+
+OrbStack is "always free for personal use". The licensing page then says:
+
+> Freelance, business, and commercial users of OrbStack must purchase a license for each user.
+
+Pro is **$8 per user per month, billed yearly as $96**. Installing it gives a 30-day Pro trial, and after that it drops to the free plan, which is personal use only.
+
+My containers are mostly for my day job, so that is commercial use. The question was not "is OrbStack better?" anymore. It was "who pays for this?".
+
+My answer was "not paying".
+
+$96 a year is not a big amount. But Colima was already working, and I had not even checked how much of what I wanted from OrbStack I could get from Colima for free. So I checked that first.
+
+## Step 1: Check what you have
+
+Three commands give most of the picture:
+
+```bash
+# the VM: cpu, memory, disk
+colima list
+
+# which docker context is active
+docker context ls
+
+# where the disk space went
+docker system df
+```
+
+And the Colima config:
+
+```bash
+grep -vE '^\s*#|^\s*$' ~/.colima/default/colima.yaml
+```
+
+These were the lines that mattered for me:
+
+```yaml
+vmType: vz
+mountType: virtiofs
+mountInotify: true
+rosetta: false
+binfmt: true
+```
+
+`virtiofs` is already the fastest mount option Colima has (its own config says so), so file mounts were fine. `rosetta: false` was the problem. Every x86 (amd64) image I ran was going through QEMU emulation, which is slow, and I have a few amd64 images in my stack.
+
+`docker system df` showed this:
+
+```
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          69        13        40.85GB   34.92GB (85%)
+Local Volumes   191       11        33.16GB   7.574GB (22%)
+```
+
+69 images, only 13 in use. If you have been ignoring that RECLAIMABLE column for a long time, you know what comes next.
+
+`docker context ls` also had an `orbstack` context still in the list, pointing to a socket that did not exist anymore. I had removed the OrbStack app long back, but a few bits of that install were still there. I come back to that in step 6.
+
+## Step 2: Measure before changing anything
+
+Without a before number, "it is faster now" is just a feeling. I ran a small CPU loop in an amd64 Alpine container, three times:
+
+```bash
+# force x86, run a loop, print the arch to confirm it is really x86
+for i in 1 2 3; do
+  time docker run --rm --platform linux/amd64 alpine \
+    sh -c 'i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done; uname -m'
+done
+```
+
+Under QEMU each run took about **7 seconds**: 6.81, 6.94 and 7.31. Note your number down.
+
+## Step 3: Prune, but carefully
+
+This is the step where people lose data, so go slow here.
+
+I removed unused images and the build cache. I did **not** touch volumes, since volumes are where the databases live.
+
+```bash
+# images not used by any container
+docker image prune -a -f
+
+# build cache, it gets rebuilt when needed
+docker builder prune -a -f
+
+# volume count should be the same as before
+docker volume ls -q | wc -l
+```
+
+There is no `docker system prune --volumes` here, and that is on purpose. Do not run it on a machine with data you care about.
+
+Images went from 69 to 13, about 41 GB down to 13 GB. Build cache went to zero. The volume count was still 191, so no database was touched.
+
+## Step 4: Turn on Rosetta
+
+Rosetta in Colima needs the `vz` VM type and Rosetta installed on the Mac. If you have ever run an Intel app on an Apple Silicon Mac, it is probably installed already. If not:
+
+```bash
+softwareupdate --install-rosetta --agree-to-license
+```
+
+Then change the flag in `~/.colima/default/colima.yaml`:
+
+```yaml
+rosetta: true
+```
+
+And restart the VM:
+
+```bash
+colima stop
+colima start
+```
+
+On start, this warning showed up a few times (I was on Colima 0.9.1):
+
+```
+Both top-level 'rosetta' and 'vmOpts.vz.rosetta' are configured.
+Using vmOpts.vz.rosetta. Top-level 'rosetta' is deprecated.
+```
+
+I thought I had edited the wrong thing. So I asked the VM itself which emulator it is using, instead of trusting the config file:
+
+```bash
+# should say enabled
+colima ssh -- cat /proc/sys/fs/binfmt_misc/rosetta
+
+# should say disabled
+colima ssh -- cat /proc/sys/fs/binfmt_misc/qemu-x86_64
+```
+
+Rosetta was `enabled` and QEMU was `disabled`, so the setting works. The warning comes from [Lima](https://github.com/lima-vm/lima), the VM layer Colima runs on, not from Colima. Colima's own config still uses the top-level `rosetta` key, so there is nothing to fix on your side.
+
+Same benchmark again:
+
+| | Before (QEMU) | After (Rosetta) |
+|---|---|---|
+| Run 1 | 6.81s | 1.59s |
+| Run 2 | 6.94s | 1.20s |
+| Run 3 | 7.31s | 1.24s |
+
+About 7 seconds down to about 1.3 seconds, roughly **5x faster**, for one word in a YAML file. Fast x86 emulation was one of the items on OrbStack's list, and Colima could do it already. It was just set to `false` in my config.
+
+## Step 5: Count your containers after the restart
+
+All four compose projects came back after the restart. But `docker ps` showed 13 running containers, and before the restart it was 17.
+
+Four containers had stopped without any error.
+
+```bash
+docker ps -a --filter status=exited \
+  --format '{{.Names}}\t{{.Status}}'
+```
+
+All four were standalone per-ticket web containers, not part of any compose project, with no restart policy (`restart=no`). Colima stopped them and nothing started them again. `docker start` brought them back:
+
+```bash
+docker start <container-1> <container-2> <container-3> <container-4>
+```
+
+Any container you care about should have a restart policy: `restart: unless-stopped` in compose, or `--restart unless-stopped` on `docker run`. And after a VM restart, count the containers. Do not go by "looks fine".
+
+## Step 6: Clean up leftovers from an old install
+
+This step is only for when the OrbStack app is already gone. If you have OrbStack installed and you use it, skip this step, there is nothing to clean.
+
+I had removed the app outside Homebrew a long time back, so three small things stayed behind:
+
+1. **A line in `~/.zprofile`** that ran OrbStack's shell setup on every new terminal, and failed every time since the file was gone:
+   ```bash
+   # Added by OrbStack: command-line tools and integration
+   source ~/.orbstack/shell/init.zsh 2>/dev/null || :
+   ```
+   The `2>/dev/null || :` hid the failure, so I never noticed it. Take a backup of the file, then remove those lines.
+
+2. **The dead Docker context:**
+   ```bash
+   docker context rm orbstack
+   ```
+
+3. **A Homebrew cask record** for an app that was not there anymore. The normal `brew uninstall --cask orbstack` failed, since its uninstall script lives inside the app and the app was already gone. The force flag worked:
+   ```bash
+   brew uninstall --cask --force orbstack
+   ```
+
+None of this was breaking anything. But a dead Docker context is the kind of thing that wastes a full evening one day, when some tool picks the wrong socket.
+
+## Step 7: Check the space on the Mac side
+
+Pruning frees space inside the VM. The Mac does not always get it back, since the VM disk file does not always shrink. So check from the Mac:
+
+```bash
+du -sh ~/.colima
+```
+
+Mine went from **76 GB to 48 GB**. I also ran `fstrim` inside the VM, expecting a bit more:
+
+```bash
+colima ssh -- sudo fstrim -av
+```
+
+It trimmed about 3.5 GiB, but `du` did not change. For me the prune had already done the job. You can skip `fstrim` if `du` already looks right.
+
+## Before and after
+
+| | Before | After |
+|---|---|---|
+| amd64 container run | about 7.0s (QEMU) | about 1.3s (Rosetta) |
+| Images | 69, 41 GB | 13, 13 GB |
+| Build cache | 9.6 GB | 0 |
+| `~/.colima` on the Mac | 76 GB | 48 GB |
+| Volumes | 191 | 191 (untouched) |
+| Running containers | 17 | 17 (after the manual start) |
+| Money spent | 0 | 0 |
+
+## So, is Colima as good as OrbStack now?
+
+No. OrbStack still has things Colima cannot do. Dynamic memory is the big one, my VM is still sized at a fixed 8 GiB whether I run the full stack or nothing. If that becomes a problem on a light day, I will stop Colima and start it smaller. CPU works the same way with `--cpus`:
+
+```bash
+colima stop
+# memory is in GiB; mine runs 4 CPUs and 8 GiB normally
+colima start --cpus 2 --memory 6
+```
+
+You can also set them as `cpu:` and `memory:` in `~/.colima/default/colima.yaml` and then run `colima start`. I have not needed that yet. There are no `.orb.local` domains either, and no Mac app.
+
+What I got is the part Colima can do: x86 images on Rosetta instead of QEMU, and a much cleaner disk. That is a better-tuned Colima, not OrbStack.
+
+If you use OrbStack for personal projects, it is free, so go for it. If your company pays for it, same. If you are about to pay for it yourself, check `rosetta` and `docker system df` in your Colima setup once before that. Some of what you want might be there already.
+
+That is all from my side. If you know a Colima setting I missed, or you think the $96 is worth it, drop me a note. And before you close this tab, run `docker system df` once. That RECLAIMABLE column is waiting for you.
