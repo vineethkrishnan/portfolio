@@ -1,9 +1,15 @@
 name: Syndicate Blog
 
 on:
-  push:
-    branches: [main]
-    paths: ['src/content/blog/**.mdx']
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'Release tag that was just deployed; posts changed since the previous tag are syndicated'
+        type: string
+        required: true
+    secrets:
+      DEVTO_API_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       backfill:
@@ -29,7 +35,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+
+      - name: Resolve release range
+        id: range
+        if: inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          previous_tag=$(git describe --tags --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)
+          echo "Syndicating posts changed between ${previous_tag:-<none>} and ${RELEASE_TAG}"
+          echo "before=${previous_tag}" >> "$GITHUB_OUTPUT"
+          echo "after=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -50,6 +67,6 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run || false }}
           BACKFILL: ${{ inputs.backfill || false }}
           SLUG: ${{ inputs.slug || '' }}
-          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
-          GITHUB_EVENT_AFTER: ${{ github.event.after }}
+          GITHUB_EVENT_BEFORE: ${{ steps.range.outputs.before }}
+          GITHUB_EVENT_AFTER: ${{ steps.range.outputs.after }}
         run: node scripts/syndicate.mjs

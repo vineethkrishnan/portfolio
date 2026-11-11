@@ -61,3 +61,13 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=portfolio-vineethnk
+
+  syndicate:
+    name: Syndicate blog to dev.to
+    needs: [release-please, deploy]
+    if: needs.release-please.outputs.release_created
+    uses: ./.github/workflows/syndicate-blog.yml
+    with:
+      release_tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets:
+      DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY }}
